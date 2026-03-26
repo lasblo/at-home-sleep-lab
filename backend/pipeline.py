@@ -14,7 +14,7 @@ BASELINE_WINDOW_SEC = 60  # Rolling baseline window in seconds
 MIN_SPATIAL_VARIANCE = 0.4  # Minimum spatial variance to consider as real movement
 MIN_ACTIVE_CELLS = 0.03    # Minimum fraction of cells with above-average motion
 PEAK_PROMINENCE = 0.03  # Minimum prominence for peak detection on localized signal
-MIN_PEAK_DISTANCE_SEC = 2.0  # Minimum seconds between detected peaks
+MIN_PEAK_DISTANCE_SEC = 3.0  # Minimum seconds between detected peaks (avoids double-counting)
 
 
 def extract_motion_signal(video_path: str | Path, progress_cb=None) -> dict:

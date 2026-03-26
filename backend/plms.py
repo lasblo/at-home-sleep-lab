@@ -1,5 +1,5 @@
 # AASM PLMS scoring criteria
-MIN_MOVEMENT_DURATION = 0.3   # seconds (relaxed for video-based detection at low sample rates)
+MIN_MOVEMENT_DURATION = 0.4   # seconds (slightly relaxed from AASM 0.5s for video frame timing)
 MAX_MOVEMENT_DURATION = 10.0  # seconds
 MIN_INTERVAL = 4.5            # seconds (onset-to-onset, slight tolerance for video frame timing)
 MAX_INTERVAL = 90.0           # seconds
