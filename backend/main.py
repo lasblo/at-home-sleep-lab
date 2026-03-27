@@ -9,6 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 
 from filename_parser import parse_filename
+from nights import group_videos_into_nights, compute_night_summary
 from pipeline import process_video
 from plms import apply_plms_criteria
 
@@ -268,6 +269,51 @@ async def video_results(video_id: str):
         raise HTTPException(404, "Results not found for this video")
     with open(path) as f:
         return json.load(f)
+
+
+# --- Nights ---
+
+@app.get("/api/nights")
+async def list_nights():
+    """List all nights with summary stats and hourly distribution."""
+    videos = _list_videos()
+    nights = group_videos_into_nights(videos)
+    result = []
+    for night in nights:
+        # Check if any videos are processed
+        has_data = any(
+            (OUTPUT_DIR / f"{vid}.json").exists()
+            for vid in night["video_ids"]
+        )
+        if has_data:
+            summary = compute_night_summary(night, OUTPUT_DIR)
+            result.append({
+                "night_date": night["night_date"],
+                "start_local": night["start_local"],
+                "end_local": night["end_local"],
+                "total_hours": night["total_hours"],
+                "video_ids": night["video_ids"],
+                "summary": summary["summary"],
+                "hourly_distribution": summary["hourly_distribution"],
+            })
+        else:
+            result.append({
+                **night,
+                "summary": None,
+                "hourly_distribution": None,
+            })
+    return result
+
+
+@app.get("/api/nights/{night_date}")
+async def night_detail(night_date: str):
+    """Full detail for one night: merged events, series, hourly distribution."""
+    videos = _list_videos()
+    nights = group_videos_into_nights(videos)
+    night = next((n for n in nights if n["night_date"] == night_date), None)
+    if not night:
+        raise HTTPException(404, f"Night {night_date} not found")
+    return compute_night_summary(night, OUTPUT_DIR)
 
 
 if __name__ == "__main__":

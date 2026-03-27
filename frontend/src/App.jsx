@@ -1,10 +1,10 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import Summary from './Summary'
+import Dashboard from './Dashboard'
+import NightDetail from './NightDetail'
 import VideoPlayer from './VideoPlayer'
 import Timeline from './Timeline'
 import VideoSummary from './VideoSummary'
 import EventList from './EventList'
-import Sparkline from './Sparkline'
 
 const styles = {
   root: {
@@ -27,28 +27,7 @@ const styles = {
     fontWeight: 700,
     marginRight: 12,
     whiteSpace: 'nowrap',
-  },
-  headerStats: {
-    display: 'flex',
-    gap: 16,
-    fontSize: 12,
-    fontFamily: 'var(--mono)',
-    alignItems: 'center',
-  },
-  headerStat: (color) => ({
-    display: 'flex',
-    alignItems: 'baseline',
-    gap: 4,
-  }),
-  headerVal: (color) => ({
-    fontWeight: 700,
-    fontSize: 15,
-    color: color || 'var(--text)',
-  }),
-  headerLabel: {
-    fontSize: 10,
-    color: 'var(--text-dim)',
-    textTransform: 'uppercase',
+    cursor: 'pointer',
   },
   headerSpacer: { flex: 1 },
   processBtn: {
@@ -65,62 +44,14 @@ const styles = {
   body: {
     flex: 1,
     display: 'flex',
-    overflow: 'hidden',
-  },
-  sidebar: {
-    width: 240,
-    minWidth: 240,
-    background: 'var(--surface)',
-    borderRight: '1px solid var(--border)',
-    display: 'flex',
     flexDirection: 'column',
     overflow: 'hidden',
   },
-  sidebarLabel: {
-    padding: '8px 14px 4px',
-    fontSize: 10,
-    color: 'var(--text-dim)',
-    textTransform: 'uppercase',
-    letterSpacing: '0.5px',
-  },
-  videoList: {
-    flex: 1,
-    overflowY: 'auto',
-  },
-  videoItem: (active) => ({
-    padding: '8px 14px',
-    cursor: 'pointer',
-    background: active ? 'rgba(255,255,255,0.06)' : 'transparent',
-    color: active ? '#fff' : 'var(--text)',
-    borderLeft: active ? '2px solid var(--accent)' : '2px solid transparent',
-    fontSize: 12,
-    borderBottom: '1px solid var(--border)',
-    transition: 'background 0.15s',
-  }),
-  videoLabel: {
-    fontFamily: 'var(--mono)',
-    fontSize: 11,
-    color: 'var(--text-dim)',
-    marginTop: 1,
-  },
-  itemProgress: {
-    marginTop: 4,
-    height: 3,
-    background: 'var(--border)',
-    borderRadius: 2,
-    overflow: 'hidden',
-  },
-  itemProgressFill: (pct) => ({
-    height: '100%',
-    width: `${pct}%`,
-    background: 'var(--accent)',
-    transition: 'width 0.5s',
-  }),
   main: {
     flex: 1,
     display: 'flex',
     flexDirection: 'column',
-    overflow: 'hidden',
+    overflow: 'auto',
   },
   bottomPanel: {
     display: 'flex',
@@ -153,53 +84,32 @@ const styles = {
   }),
 }
 
-function plmiColor(plmi) {
-  if (plmi < 5) return '#22c55e'
-  if (plmi < 15) return '#f59e0b'
-  if (plmi < 25) return '#f97316'
-  return '#ef4444'
-}
-
 export default function App() {
-  const [videos, setVideos] = useState([])
-  const [selectedId, setSelectedId] = useState(null)
-  const [results, setResults] = useState(null)
-  const [combined, setCombined] = useState(null)
-  const [processing, setProcessing] = useState({ running: false, progress: {} })
+  // View state: 'dashboard' or 'night'
+  const [view, setView] = useState('dashboard')
+  const [nights, setNights] = useState([])
+  const [selectedNightDate, setSelectedNightDate] = useState(null)
+  const [nightDetail, setNightDetail] = useState(null)
+
+  // Per-video state (when drilling into a video from night detail)
+  const [selectedVideoId, setSelectedVideoId] = useState(null)
+  const [videoResults, setVideoResults] = useState(null)
   const [seekTo, setSeekTo] = useState(null)
   const [currentTime, setCurrentTime] = useState(0)
-  const [sparklines, setSparklines] = useState({})
+
+  // Processing
+  const [processing, setProcessing] = useState({ running: false, progress: {} })
   const pollRef = useRef(null)
 
-  const fetchResults = useCallback(async () => {
+  // Fetch nights list
+  const fetchNights = useCallback(async () => {
     try {
-      const res = await fetch('/api/results')
-      const data = await res.json()
-      setVideos(data)
-      if (!selectedId) {
-        const first = data.find(v => v.processed)
-        if (first) setSelectedId(first.id)
-      }
-      // Fetch sparkline data for processed videos
-      for (const v of data) {
-        if (v.processed) {
-          fetch(`/api/results/${v.id}`)
-            .then(r => r.ok ? r.json() : null)
-            .then(d => {
-              if (d?.motion_signal) {
-                setSparklines(prev => ({ ...prev, [v.id]: d.motion_signal }))
-              }
-            })
-            .catch(() => {})
-        }
-      }
+      const res = await fetch('/api/nights')
+      if (res.ok) setNights(await res.json())
     } catch { /* server not ready */ }
-    try {
-      const res = await fetch('/api/results/combined')
-      if (res.ok) setCombined(await res.json())
-    } catch { /* no results yet */ }
-  }, [selectedId])
+  }, [])
 
+  // Polling for processing status
   const startPolling = useCallback(() => {
     if (pollRef.current) return
     pollRef.current = setInterval(async () => {
@@ -210,14 +120,15 @@ export default function App() {
         if (!data.running) {
           clearInterval(pollRef.current)
           pollRef.current = null
-          fetchResults()
+          fetchNights()
         }
       } catch { /* server not ready */ }
     }, 2000)
-  }, [fetchResults])
+  }, [fetchNights])
 
+  // Init
   useEffect(() => {
-    fetchResults()
+    fetchNights()
     fetch('/api/process/status')
       .then(r => r.json())
       .then(data => {
@@ -227,13 +138,43 @@ export default function App() {
       .catch(() => {})
   }, [])
 
+  // Load night detail when selected
   useEffect(() => {
-    if (!selectedId) { setResults(null); return }
-    fetch(`/api/results/${selectedId}`)
+    if (!selectedNightDate) { setNightDetail(null); return }
+    fetch(`/api/nights/${selectedNightDate}`)
       .then(r => r.ok ? r.json() : null)
-      .then(setResults)
-      .catch(() => setResults(null))
-  }, [selectedId])
+      .then(setNightDetail)
+      .catch(() => setNightDetail(null))
+  }, [selectedNightDate])
+
+  // Load video results when selected
+  useEffect(() => {
+    if (!selectedVideoId) { setVideoResults(null); return }
+    fetch(`/api/results/${selectedVideoId}`)
+      .then(r => r.ok ? r.json() : null)
+      .then(setVideoResults)
+      .catch(() => setVideoResults(null))
+  }, [selectedVideoId])
+
+  const handleSelectNight = (nightDate) => {
+    setSelectedNightDate(nightDate)
+    setSelectedVideoId(null)
+    setVideoResults(null)
+    setView('night')
+  }
+
+  const handleBack = () => {
+    setView('dashboard')
+    setSelectedNightDate(null)
+    setSelectedVideoId(null)
+    setVideoResults(null)
+  }
+
+  const handleSelectVideo = (videoId) => {
+    setSelectedVideoId(videoId)
+    setSeekTo(null)
+    setCurrentTime(0)
+  }
 
   const startProcessing = async () => {
     await fetch('/api/process', { method: 'POST' })
@@ -241,44 +182,24 @@ export default function App() {
     startPolling()
   }
 
+  const handleSeek = useCallback((t) => {
+    setSeekTo(t)
+    setCurrentTime(t)
+  }, [])
+
   const overallProgress = (() => {
     const vals = Object.values(processing.progress)
     if (vals.length === 0) return 0
     return (vals.reduce((a, b) => a + b, 0) / vals.length) * 100
   })()
 
-  const selectedVideo = videos.find(v => v.id === selectedId)
-
-  const handleSeek = useCallback((t) => {
-    setSeekTo(t)
-    setCurrentTime(t)
-  }, [])
+  const selectedVideo = nightDetail?.videos?.find(v => v.id === selectedVideoId)
 
   return (
     <div style={styles.root}>
       {/* Header */}
       <div style={styles.header}>
-        <div style={styles.headerTitle}>PLMS Detector</div>
-        {combined && (
-          <div style={styles.headerStats}>
-            <div style={styles.headerStat()}>
-              <span style={styles.headerVal(plmiColor(combined.plmi))}>{combined.plmi}</span>
-              <span style={styles.headerLabel}>PLMI</span>
-            </div>
-            <div style={styles.headerStat()}>
-              <span style={styles.headerVal('#ef4444')}>{combined.plm_count}</span>
-              <span style={styles.headerLabel}>PLMs</span>
-            </div>
-            <div style={styles.headerStat()}>
-              <span style={styles.headerVal()}>{combined.series_count}</span>
-              <span style={styles.headerLabel}>Series</span>
-            </div>
-            <div style={styles.headerStat()}>
-              <span style={styles.headerVal()}>{combined.total_hours}h</span>
-              <span style={styles.headerLabel}>Recorded</span>
-            </div>
-          </div>
-        )}
+        <div style={styles.headerTitle} onClick={handleBack}>PLMS Detector</div>
         <div style={styles.headerSpacer} />
         {processing.running && (
           <div style={styles.progressBar}>
@@ -292,79 +213,51 @@ export default function App() {
 
       {/* Body */}
       <div style={styles.body}>
-        {/* Sidebar */}
-        <div style={styles.sidebar}>
-          <div style={styles.sidebarLabel}>Segments</div>
-          <div style={styles.videoList}>
-            {videos.map(v => (
-              <div
-                key={v.id}
-                style={styles.videoItem(v.id === selectedId)}
-                onClick={() => v.processed && setSelectedId(v.id)}
-              >
-                <div>{v.start_local?.slice(11, 19)} — {v.end_local?.slice(11, 19)}</div>
-                <div style={styles.videoLabel}>
-                  {(() => {
-                    const pct = processing.progress?.[v.id]
-                    if (pct != null && pct > 0 && pct < 1) return `Analyzing… ${Math.round(pct * 100)}%`
-                    if (pct === 1 || v.processed) return `${(v.duration_sec / 60).toFixed(0)} min`
-                    if (processing.running && pct === 0) return 'Queued'
-                    return 'Not processed'
-                  })()}
-                </div>
-                {(() => {
-                  const pct = processing.progress?.[v.id]
-                  if (pct != null && pct > 0 && pct < 1) return (
-                    <div style={styles.itemProgress}>
-                      <div style={styles.itemProgressFill(pct * 100)} />
-                    </div>
-                  )
-                  return null
-                })()}
-                {sparklines[v.id] && (
-                  <Sparkline
-                    values={sparklines[v.id].values}
-                    sampleRate={sparklines[v.id].sample_rate_hz}
-                  />
-                )}
-              </div>
-            ))}
-          </div>
-        </div>
+        {view === 'dashboard' ? (
+          <Dashboard nights={nights} onSelectNight={handleSelectNight} />
+        ) : (
+          <div style={styles.main}>
+            {/* Night analytics panel */}
+            <NightDetail
+              nightData={nightDetail}
+              onBack={handleBack}
+              onSelectVideo={handleSelectVideo}
+              selectedVideoId={selectedVideoId}
+            />
 
-        {/* Main content */}
-        <div style={styles.main}>
-          {results && selectedVideo ? (
-            <>
-              <VideoPlayer
-                filename={selectedVideo.filename}
-                seekTo={seekTo}
-                onTimeUpdate={setCurrentTime}
-              />
-              <div style={styles.bottomPanel}>
-                <VideoSummary results={results} />
-                <Timeline
-                  motionSignal={results.motion_signal}
-                  events={results.events}
-                  videoDuration={results.video_info?.duration_sec || 3600}
-                  onSeek={handleSeek}
-                  currentTime={currentTime}
+            {/* Video player + timeline + events (when a segment is selected) */}
+            {videoResults && selectedVideo ? (
+              <>
+                <VideoPlayer
+                  filename={selectedVideo.filename}
+                  seekTo={seekTo}
+                  onTimeUpdate={setCurrentTime}
                 />
-                <EventList
-                  events={results.events}
-                  currentTime={currentTime}
-                  onSeek={handleSeek}
-                />
-              </div>
-            </>
-          ) : (
-            <div style={styles.empty}>
-              {videos.length === 0
-                ? 'Click "Process All Videos" to start analysis'
-                : 'Select a processed video from the sidebar'}
-            </div>
-          )}
-        </div>
+                <div style={styles.bottomPanel}>
+                  <VideoSummary results={videoResults} />
+                  <Timeline
+                    motionSignal={videoResults.motion_signal}
+                    events={videoResults.events}
+                    videoDuration={videoResults.video_info?.duration_sec || 3600}
+                    onSeek={handleSeek}
+                    currentTime={currentTime}
+                  />
+                  <EventList
+                    events={videoResults.events}
+                    currentTime={currentTime}
+                    onSeek={handleSeek}
+                  />
+                </div>
+              </>
+            ) : (
+              !nightDetail ? (
+                <div style={styles.empty}>Loading night data…</div>
+              ) : (
+                <div style={styles.empty}>Select a video segment above to review detections</div>
+              )
+            )}
+          </div>
+        )}
       </div>
     </div>
   )
