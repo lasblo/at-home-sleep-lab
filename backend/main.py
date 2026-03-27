@@ -18,7 +18,16 @@ from plms import apply_plms_criteria
 # Parallel workers: use half the CPU cores (leave room for system/UI)
 MAX_WORKERS = max(2, (os.cpu_count() or 4) // 2)
 
+# Swift/Metal binary path (hardware-accelerated pipeline)
+SWIFT_BINARY = Path(__file__).parent.parent / "swift-motion" / ".build" / "release" / "plms-motion"
+
 app = FastAPI(title="PLMS Detector")
+
+# Log processing backend
+if SWIFT_BINARY.exists():
+    print(f"[PLMS] Using Swift/Metal backend: {SWIFT_BINARY}")
+else:
+    print("[PLMS] Swift binary not found, using Python/OpenCV fallback")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:5173"],
@@ -114,13 +123,51 @@ async def serve_video(filename: str, request: Request):
 def _process_one_video(args):
     """Worker function for parallel processing. Must be top-level for pickling."""
     video_path_str, vid, output_dir_str, progress_dict = args
+
+    if SWIFT_BINARY.exists():
+        return _process_one_video_swift(video_path_str, vid, progress_dict)
+    return _process_one_video_python(video_path_str, vid, progress_dict)
+
+
+def _process_one_video_swift(video_path_str, vid, progress_dict):
+    """Process video using Swift/Metal CLI — hardware-accelerated."""
+    import subprocess, json, threading
+
+    proc = subprocess.Popen(
+        [str(SWIFT_BINARY), "process", video_path_str, "--progress"],
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+    )
+
+    # Read stderr for progress updates in a thread
+    def read_progress():
+        for line in proc.stderr:
+            text = line.decode().strip()
+            if text.startswith("PROGRESS:"):
+                try:
+                    pct = float(text.split(":")[1])
+                    progress_dict[vid] = pct
+                except (ValueError, IndexError):
+                    pass
+
+    progress_thread = threading.Thread(target=read_progress, daemon=True)
+    progress_thread.start()
+
+    stdout, _ = proc.communicate()
+    progress_thread.join(timeout=1)
+
+    if proc.returncode != 0:
+        raise RuntimeError(f"Swift CLI exited with code {proc.returncode}")
+
+    result = json.loads(stdout)
+    return vid, result
+
+
+def _process_one_video_python(video_path_str, vid, progress_dict):
+    """Process video using Python/OpenCV — CPU fallback."""
     from pipeline import process_video
-    from plms import apply_plms_criteria
-    import json
     from pathlib import Path
 
     video_path = Path(video_path_str)
-    output_dir = Path(output_dir_str)
 
     def progress_cb(pct):
         progress_dict[vid] = pct
@@ -165,17 +212,21 @@ def _run_processing():
                     shared_progress[vid] = -1
                     continue
 
-                # Find the matching video metadata
                 v = next(v for v in videos if v["id"] == vid)
-                recording_hours = v["duration_sec"] / 3600.0
-                plms_result = apply_plms_criteria(result["events"], recording_hours)
 
-                output = {
-                    "video": v,
-                    "video_info": result["video_info"],
-                    "motion_signal": result["motion_signal"],
-                    **plms_result,
-                }
+                if SWIFT_BINARY.exists():
+                    # Swift CLI returns complete result with events/series/summary
+                    output = {"video": v, **result}
+                else:
+                    # Python pipeline returns raw events; apply PLMS criteria
+                    recording_hours = v["duration_sec"] / 3600.0
+                    plms_result = apply_plms_criteria(result["events"], recording_hours)
+                    output = {
+                        "video": v,
+                        "video_info": result["video_info"],
+                        "motion_signal": result["motion_signal"],
+                        **plms_result,
+                    }
 
                 out_path = OUTPUT_DIR / f"{vid}.json"
                 with open(out_path, "w") as f:
@@ -251,19 +302,22 @@ def _run_single_processing(video_id: str):
         _processing["progress"] = {vid: 0.0}
         video_path = VIDEOS_DIR / v["filename"]
 
-        def progress_cb(pct, _vid=vid):
-            _processing["progress"][_vid] = pct
+        if SWIFT_BINARY.exists():
+            _, result = _process_one_video_swift(str(video_path), vid, _processing["progress"])
+            output = {"video": v, **result}
+        else:
+            def progress_cb(pct, _vid=vid):
+                _processing["progress"][_vid] = pct
 
-        result = process_video(video_path, progress_cb)
-        recording_hours = v["duration_sec"] / 3600.0
-        plms_result = apply_plms_criteria(result["events"], recording_hours)
-
-        output = {
-            "video": v,
-            "video_info": result["video_info"],
-            "motion_signal": result["motion_signal"],
-            **plms_result,
-        }
+            result = process_video(video_path, progress_cb)
+            recording_hours = v["duration_sec"] / 3600.0
+            plms_result = apply_plms_criteria(result["events"], recording_hours)
+            output = {
+                "video": v,
+                "video_info": result["video_info"],
+                "motion_signal": result["motion_signal"],
+                **plms_result,
+            }
 
         out_path = OUTPUT_DIR / f"{vid}.json"
         with open(out_path, "w") as f:
