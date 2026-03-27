@@ -11,7 +11,7 @@ GRID_COLS = 8           # Grid columns for spatial analysis
 GRID_ROWS = 4           # Grid rows for spatial analysis
 SMOOTH_WINDOW = 3       # Moving average window in samples
 BASELINE_WINDOW_SEC = 60  # Rolling baseline window in seconds
-MIN_SPATIAL_VARIANCE = 0.4  # Minimum spatial variance to consider as real movement
+MIN_SPATIAL_VARIANCE = 0.35  # Minimum spatial variance to consider as real movement
 MIN_ACTIVE_CELLS = 0.03    # Minimum fraction of cells with above-average motion
 PEAK_PROMINENCE = 0.03  # Minimum prominence for peak detection on localized signal
 MIN_PEAK_DISTANCE_SEC = 3.0  # Minimum seconds between detected peaks (avoids double-counting)
@@ -179,6 +179,9 @@ def detect_events(motion_signal: dict) -> list[dict]:
     events = []
     for peak_idx in peaks:
         sv = float(spatial_vars[peak_idx]) if peak_idx < len(spatial_vars) else 0
+        # Hard floor: reject events with very low spatial variance (likely artifacts)
+        if sv < MIN_SPATIAL_VARIANCE:
+            continue
         amplitude = float(smoothed[peak_idx])
         peak_time = float(timestamps[peak_idx])
         local_base = float(baseline[peak_idx])
