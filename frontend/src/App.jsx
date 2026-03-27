@@ -182,6 +182,12 @@ export default function App() {
     startPolling()
   }
 
+  const handleReanalyze = async (videoId) => {
+    await fetch(`/api/reanalyze/${videoId}`, { method: 'POST' })
+    setProcessing({ running: true, progress: { [videoId]: 0 } })
+    startPolling()
+  }
+
   const handleSeek = useCallback((t) => {
     setSeekTo(t)
     setCurrentTime(t)
@@ -234,7 +240,12 @@ export default function App() {
                   onTimeUpdate={setCurrentTime}
                 />
                 <div style={styles.bottomPanel}>
-                  <VideoSummary results={videoResults} />
+                  <VideoSummary
+                    results={videoResults}
+                    videoId={selectedVideoId}
+                    onReanalyze={handleReanalyze}
+                    processing={processing}
+                  />
                   <Timeline
                     motionSignal={videoResults.motion_signal}
                     events={videoResults.events}

@@ -348,6 +348,58 @@ async def start_single_processing(video_id: str):
     return {"status": "started"}
 
 
+@app.post("/api/reanalyze/{video_id}")
+async def reanalyze_video(video_id: str):
+    """Reprocess a single video, overwriting existing output. Uses Python pipeline
+    (with debug info) even if Swift is available, to get full decision chain."""
+    if _processing["running"]:
+        return {"status": "already_running"}
+    _processing["running"] = True
+    _processing["error"] = None
+    _processing["progress"] = {video_id: 0.0}
+
+    def run():
+        try:
+            videos = _list_videos()
+            v = next((v for v in videos if v["id"] == video_id), None)
+            if not v:
+                _processing["error"] = f"Video {video_id} not found"
+                return
+
+            video_path = VIDEOS_DIR / v["filename"]
+
+            def progress_cb(pct):
+                _processing["progress"][video_id] = pct
+
+            # Always use Python pipeline for reanalysis (includes debug chain)
+            result = process_video(video_path, progress_cb)
+            recording_hours = v["duration_sec"] / 3600.0
+            plms_result = apply_plms_criteria(result["events"], recording_hours)
+
+            output = {
+                "video": v,
+                "video_info": result["video_info"],
+                "motion_signal": result["motion_signal"],
+                **plms_result,
+            }
+
+            out_path = OUTPUT_DIR / f"{video_id}.json"
+            with open(out_path, "w") as f:
+                json.dump(output, f)
+
+            _processing["progress"][video_id] = 1.0
+            # Rebuild combined
+            _write_combined(videos)
+        except Exception as e:
+            _processing["error"] = str(e)
+        finally:
+            _processing["running"] = False
+
+    thread = threading.Thread(target=run, daemon=True)
+    thread.start()
+    return {"status": "started"}
+
+
 @app.get("/api/process/status")
 async def processing_status():
     # Convert Manager dict to plain dict for JSON serialization

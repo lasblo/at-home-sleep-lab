@@ -38,21 +38,64 @@ def apply_plms_criteria(events: list[dict], recording_hours: float) -> dict:
         e["is_plm"] = False
         e["series_id"] = None
         e["movement_type"] = _classify_event(e)
+
+        # Build classification reason chain
+        debug = e.get("debug", {})
+        amp = e.get("amplitude", 0)
+        dur = e.get("duration_sec", 0)
+
+        body_reason = None
+        if e["movement_type"] == "body":
+            body_reason = f"amp {amp:.1f} > {BODY_MOVEMENT_AMP_THRESHOLD} AND dur {dur:.2f}s > {BODY_MOVEMENT_DUR_THRESHOLD}s"
+
+        plm_eligible = (
+            e["movement_type"] == "limb"
+            and MIN_MOVEMENT_DURATION <= dur <= MAX_MOVEMENT_DURATION
+        )
+        plm_reject_reason = None
+        if e["movement_type"] == "body":
+            plm_reject_reason = "body movement (excluded from PLM series)"
+        elif dur < MIN_MOVEMENT_DURATION:
+            plm_reject_reason = f"duration {dur:.2f}s < {MIN_MOVEMENT_DURATION}s minimum"
+        elif dur > MAX_MOVEMENT_DURATION:
+            plm_reject_reason = f"duration {dur:.2f}s > {MAX_MOVEMENT_DURATION}s maximum"
+
+        debug["body_classification"] = e["movement_type"]
+        debug["body_reason"] = body_reason
+        debug["plm_eligible"] = plm_eligible
+        debug["plm_reject_reason"] = plm_reject_reason
+        e["debug"] = debug
+
         candidates.append(e)
 
     # Only limb movements with valid duration can be PLM candidates
-    plm_candidates = [
-        e for e in candidates
-        if e["movement_type"] == "limb"
-        and MIN_MOVEMENT_DURATION <= e["duration_sec"] <= MAX_MOVEMENT_DURATION
-    ]
+    plm_candidates = [e for e in candidates if e.get("debug", {}).get("plm_eligible")]
     plm_candidates.sort(key=lambda e: e["timestamp_sec"])
 
     # Build chains of consecutive events with valid inter-movement intervals
+    # Track interval info for each PLM candidate
     chains = []
     current_chain = []
 
-    for event in plm_candidates:
+    for i, event in enumerate(plm_candidates):
+        debug = event.get("debug", {})
+        if i > 0:
+            prev = plm_candidates[i - 1]
+            interval = event["onset_sec"] - prev["onset_sec"]
+            debug["interval_to_prev_sec"] = round(interval, 2)
+            debug["interval_valid"] = MIN_INTERVAL <= interval <= MAX_INTERVAL
+            if interval < MIN_INTERVAL:
+                debug["interval_reason"] = f"{interval:.1f}s < {MIN_INTERVAL}s minimum"
+            elif interval > MAX_INTERVAL:
+                debug["interval_reason"] = f"{interval:.1f}s > {MAX_INTERVAL}s maximum"
+            else:
+                debug["interval_reason"] = None
+        else:
+            debug["interval_to_prev_sec"] = None
+            debug["interval_valid"] = None
+            debug["interval_reason"] = "first candidate"
+        event["debug"] = debug
+
         if not current_chain:
             current_chain.append(event)
             continue
@@ -97,14 +140,35 @@ def apply_plms_criteria(events: list[dict], recording_hours: float) -> dict:
         if e["is_plm"]:
             plm_map[e["timestamp_sec"]] = e
 
+    # Track which chains were too short (not promoted to series)
+    # Re-scan plm_candidates to find non-series chains
+    _assigned = set()
+    for chain in chains:
+        for ev in chain:
+            _assigned.add(ev["timestamp_sec"])
+
+    # PLM candidates NOT in any series: mark why
+    for e in plm_candidates:
+        if e["timestamp_sec"] not in _assigned:
+            debug = e.get("debug", {})
+            debug["plm_series_reason"] = "chain too short (< 4 consecutive events with valid intervals)"
+            e["debug"] = debug
+
     result_events = []
     for i, e in enumerate(candidates):
         e = dict(e)
         e["id"] = i + 1
         tagged = plm_map.get(e["timestamp_sec"])
+        debug = e.get("debug", {})
         if tagged:
             e["is_plm"] = True
             e["series_id"] = tagged["series_id"]
+            debug["plm_series_reason"] = f"member of series {tagged['series_id']}"
+        elif debug.get("plm_reject_reason"):
+            debug["plm_series_reason"] = debug["plm_reject_reason"]
+        elif not debug.get("plm_series_reason"):
+            debug["plm_series_reason"] = "chain too short (< 4 consecutive events with valid intervals)"
+        e["debug"] = debug
         result_events.append(e)
 
     plmi = round(plm_count / recording_hours, 1) if recording_hours > 0 else 0

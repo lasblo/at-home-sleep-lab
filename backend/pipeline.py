@@ -201,6 +201,9 @@ def detect_events(motion_signal: dict) -> list[dict]:
         duration = offset_time - onset_time
         min_dur = 2.0 / sample_rate
 
+        peak_height = float(normalized[peak_idx])
+        peak_prominence = float(properties["prominences"][list(peaks).index(peak_idx)]) if "prominences" in properties else None
+
         events.append({
             "timestamp_sec": round(peak_time, 2),
             "onset_sec": round(onset_time, 2),
@@ -208,6 +211,17 @@ def detect_events(motion_signal: dict) -> list[dict]:
             "amplitude": round(amplitude, 6),
             "spatial_variance": round(sv, 3),
             "peak_index": int(peak_idx),
+            "debug": {
+                "raw_localized": round(float(localized[peak_idx]), 6),
+                "smoothed": round(amplitude, 6),
+                "baseline": round(local_base, 6),
+                "above_baseline": round(float(above_baseline[peak_idx]), 6),
+                "normalized_height": round(peak_height, 4),
+                "prominence": round(peak_prominence, 4) if peak_prominence is not None else None,
+                "onset_threshold": round(cross_threshold, 6),
+                "sv_threshold": MIN_SPATIAL_VARIANCE,
+                "sv_passed": sv >= MIN_SPATIAL_VARIANCE,
+            },
         })
 
     return events

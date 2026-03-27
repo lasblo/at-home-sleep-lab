@@ -26,6 +26,16 @@ const styles = {
     textTransform: 'uppercase',
     letterSpacing: '0.3px',
   },
+  reanalyzeBtn: {
+    background: 'rgba(255,255,255,0.08)',
+    border: '1px solid var(--border)',
+    color: 'var(--text)',
+    padding: '4px 12px',
+    borderRadius: 4,
+    fontSize: 11,
+    cursor: 'pointer',
+    fontFamily: 'var(--mono)',
+  },
 }
 
 function plmiColor(plmi) {
@@ -35,9 +45,12 @@ function plmiColor(plmi) {
   return '#ef4444'
 }
 
-export default function VideoSummary({ results }) {
+export default function VideoSummary({ results, videoId, onReanalyze, processing }) {
   if (!results?.summary) return null
   const s = results.summary
+  const isReanalyzing = processing?.running && videoId && processing?.progress?.[videoId] != null
+  const hasDebug = results.events?.some(e => e.debug)
+
   return (
     <div style={styles.container}>
       <div style={styles.stat}>
@@ -55,6 +68,16 @@ export default function VideoSummary({ results }) {
       <div style={styles.stat}>
         <span style={styles.val()}>{s.total_movements}</span>
         <span style={styles.label}>Events</span>
+      </div>
+      <div style={{ marginLeft: 'auto', display: 'flex', gap: 8, alignItems: 'center' }}>
+        {hasDebug && <span style={{ fontSize: 10, color: '#22c55e' }}>debug info available</span>}
+        <button
+          style={styles.reanalyzeBtn}
+          onClick={() => onReanalyze?.(videoId)}
+          disabled={isReanalyzing}
+        >
+          {isReanalyzing ? 'Reanalyzing…' : 'Reanalyze'}
+        </button>
       </div>
     </div>
   )
