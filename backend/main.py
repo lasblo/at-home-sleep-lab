@@ -15,11 +15,11 @@ from nights import group_videos_into_nights, compute_night_summary
 from pipeline import process_video
 from plms import apply_plms_criteria
 
-# Parallel workers: use half the CPU cores (leave room for system/UI)
-MAX_WORKERS = max(2, (os.cpu_count() or 4) // 2)
-
 # Swift/Metal binary path (hardware-accelerated pipeline)
 SWIFT_BINARY = Path(__file__).parent.parent / "swift-motion" / ".build" / "release" / "plms-motion"
+
+# Parallel workers for batch processing (Python/OpenCV software decode)
+MAX_WORKERS = max(2, (os.cpu_count() or 4) // 2)
 
 app = FastAPI(title="PLMS Detector")
 
@@ -121,11 +121,13 @@ async def serve_video(filename: str, request: Request):
 # --- Processing ---
 
 def _process_one_video(args):
-    """Worker function for parallel processing. Must be top-level for pickling."""
-    video_path_str, vid, output_dir_str, progress_dict = args
+    """Worker function for parallel processing. Must be top-level for pickling.
 
-    if SWIFT_BINARY.exists():
-        return _process_one_video_swift(video_path_str, vid, progress_dict)
+    Uses Python/OpenCV for batch processing — software decode across all CPU cores
+    scales better than hardware decoder with multiple concurrent streams.
+    Swift/Metal is used for single-video processing (lower latency).
+    """
+    video_path_str, vid, output_dir_str, progress_dict = args
     return _process_one_video_python(video_path_str, vid, progress_dict)
 
 
@@ -138,7 +140,7 @@ def _process_one_video_swift(video_path_str, vid, progress_dict):
         stdout=subprocess.PIPE, stderr=subprocess.PIPE,
     )
 
-    # Read stderr for progress updates in a thread
+    # Read stderr for progress updates in a background thread
     def read_progress():
         for line in proc.stderr:
             text = line.decode().strip()
@@ -152,8 +154,10 @@ def _process_one_video_swift(video_path_str, vid, progress_dict):
     progress_thread = threading.Thread(target=read_progress, daemon=True)
     progress_thread.start()
 
-    stdout, _ = proc.communicate()
-    progress_thread.join(timeout=1)
+    # Read stdout separately (don't use communicate() which fights the stderr thread)
+    stdout = proc.stdout.read()
+    proc.wait()
+    progress_thread.join(timeout=2)
 
     if proc.returncode != 0:
         raise RuntimeError(f"Swift CLI exited with code {proc.returncode}")
