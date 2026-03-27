@@ -1,4 +1,4 @@
-import { useRef, useEffect } from 'react'
+import { useRef, useEffect, useState } from 'react'
 
 function plmiColor(plmi) {
   if (plmi < 5) return '#22c55e'
@@ -8,8 +8,21 @@ function plmiColor(plmi) {
 }
 
 // --- Hourly Distribution Bar Chart ---
-function HourlyChart({ hourly }) {
+function HourlyChart({ hourly, onBarClick }) {
   const canvasRef = useRef(null)
+  const [hovered, setHovered] = useState(null)
+
+  const pad = { top: 16, right: 16, bottom: 28, left: 40 }
+
+  const getBarIndex = (e) => {
+    if (!hourly?.length) return -1
+    const rect = e.currentTarget.getBoundingClientRect()
+    const x = e.clientX - rect.left
+    const chartW = rect.width - pad.left - pad.right
+    const barW = chartW / hourly.length
+    const idx = Math.floor((x - pad.left) / barW)
+    return idx >= 0 && idx < hourly.length ? idx : -1
+  }
 
   useEffect(() => {
     const canvas = canvasRef.current
@@ -24,7 +37,6 @@ function HourlyChart({ hourly }) {
 
     const w = rect.width
     const h = rect.height
-    const pad = { top: 16, right: 16, bottom: 28, left: 40 }
     const chartW = w - pad.left - pad.right
     const chartH = h - pad.top - pad.bottom
 
@@ -56,21 +68,22 @@ function HourlyChart({ hourly }) {
     hourly.forEach((bucket, i) => {
       const x = pad.left + i * barW + gap
       const bw = barW - gap * 2
+      const isHov = hovered === i
 
       // PLM bar (red)
       const plmH = (bucket.plm_count / maxCount) * chartH
-      ctx.fillStyle = 'rgba(239, 68, 68, 0.8)'
+      ctx.fillStyle = isHov ? 'rgba(239, 68, 68, 1)' : 'rgba(239, 68, 68, 0.8)'
       ctx.fillRect(x, pad.top + chartH - plmH, bw, plmH)
 
       // Other movement bar (amber, stacked)
       const otherTotal = bucket.other_count + bucket.body_count
       const otherH = (otherTotal / maxCount) * chartH
-      ctx.fillStyle = 'rgba(245, 158, 11, 0.5)'
+      ctx.fillStyle = isHov ? 'rgba(245, 158, 11, 0.7)' : 'rgba(245, 158, 11, 0.5)'
       ctx.fillRect(x, pad.top + chartH - plmH - otherH, bw, otherH)
 
       // X-axis label
-      ctx.fillStyle = 'var(--text-dim)'
-      ctx.font = '9px ui-monospace, monospace'
+      ctx.fillStyle = isHov ? '#fff' : 'var(--text-dim)'
+      ctx.font = isHov ? 'bold 9px ui-monospace, monospace' : '9px ui-monospace, monospace'
       ctx.textAlign = 'center'
       ctx.fillText(bucket.label, x + bw / 2, pad.top + chartH + 14)
 
@@ -82,7 +95,7 @@ function HourlyChart({ hourly }) {
         ctx.fillText(bucket.plm_count.toString(), x + bw / 2, pad.top + chartH - plmH - otherH - 4)
       }
     })
-  }, [hourly])
+  }, [hourly, hovered])
 
   return (
     <div style={styles.chartBox}>
@@ -95,7 +108,13 @@ function HourlyChart({ hourly }) {
       </div>
       <canvas
         ref={canvasRef}
-        style={{ width: '100%', height: 180, display: 'block' }}
+        style={{ width: '100%', height: 180, display: 'block', cursor: hovered != null ? 'pointer' : 'default' }}
+        onClick={(e) => {
+          const idx = getBarIndex(e)
+          if (idx >= 0 && onBarClick) onBarClick(hourly[idx])
+        }}
+        onMouseMove={(e) => setHovered(getBarIndex(e) >= 0 ? getBarIndex(e) : null)}
+        onMouseLeave={() => setHovered(null)}
       />
     </div>
   )
@@ -182,7 +201,26 @@ export default function NightDetail({ nightData, onBack, onSelectVideo, selected
       {/* Charts row — collapse when a video is selected to save space */}
       {!selectedVideoId && (
         <div style={styles.chartsRow}>
-          <HourlyChart hourly={nightData.hourly_distribution} />
+          <HourlyChart hourly={nightData.hourly_distribution} onBarClick={(bucket) => {
+            // Find the video whose time range contains this hour
+            const videos = nightData.videos || []
+            const barLabel = bucket.label // e.g. "02:58"
+            const barHH = parseInt(barLabel.split(':')[0])
+            const barMM = parseInt(barLabel.split(':')[1])
+            const match = videos.find(v => {
+              const startHH = parseInt((v.start_local || '').slice(11, 13))
+              const startMM = parseInt((v.start_local || '').slice(14, 16))
+              const endHH = parseInt((v.end_local || '').slice(11, 13))
+              const endMM = parseInt((v.end_local || '').slice(14, 16))
+              const startMin = startHH * 60 + startMM
+              const endMin = endHH * 60 + endMM
+              const barMin = barHH * 60 + barMM
+              // Handle midnight wrap
+              if (endMin > startMin) return barMin >= startMin && barMin < endMin
+              return barMin >= startMin || barMin < endMin
+            })
+            if (match) onSelectVideo(match.id)
+          }} />
           <SegmentList
             videos={nightData.videos || []}
             selectedId={selectedVideoId}
