@@ -5,36 +5,54 @@ MIN_INTERVAL = 4.5            # seconds (onset-to-onset, slight tolerance for vi
 MAX_INTERVAL = 90.0           # seconds
 MIN_SERIES_LENGTH = 4         # minimum events for a PLM series
 
+# Body movement classification (position changes, not limb movements)
+BODY_MOVEMENT_AMP_THRESHOLD = 25.0  # high amplitude
+BODY_MOVEMENT_DUR_THRESHOLD = 3.0   # AND long duration → likely a position change
+
+
+def _classify_event(event: dict) -> str:
+    """Classify an event as 'limb' or 'body' movement.
+
+    Body movements (rolling over, position changes) have high amplitude
+    AND long duration. They should not be counted as periodic limb movements.
+    """
+    amp = event.get("amplitude", 0)
+    dur = event.get("duration_sec", 0)
+    if amp > BODY_MOVEMENT_AMP_THRESHOLD and dur > BODY_MOVEMENT_DUR_THRESHOLD:
+        return "body"
+    return "limb"
+
 
 def apply_plms_criteria(events: list[dict], recording_hours: float) -> dict:
     """Filter events by AASM criteria and group into PLM series.
 
     Returns:
-        events: list with is_plm and series_id added
+        events: list with is_plm, series_id, and movement_type added
         series: list of series info
         summary: aggregate metrics
     """
-    # Filter by duration
+    # Classify and filter by duration
     candidates = []
     for e in events:
         e = dict(e)
-        dur = e["duration_sec"]
         e["is_plm"] = False
         e["series_id"] = None
-        if MIN_MOVEMENT_DURATION <= dur <= MAX_MOVEMENT_DURATION:
-            candidates.append(e)
-        else:
-            candidates.append(e)
+        e["movement_type"] = _classify_event(e)
+        candidates.append(e)
 
-    # Sort by timestamp
-    duration_valid = [e for e in candidates if MIN_MOVEMENT_DURATION <= e["duration_sec"] <= MAX_MOVEMENT_DURATION]
-    duration_valid.sort(key=lambda e: e["timestamp_sec"])
+    # Only limb movements with valid duration can be PLM candidates
+    plm_candidates = [
+        e for e in candidates
+        if e["movement_type"] == "limb"
+        and MIN_MOVEMENT_DURATION <= e["duration_sec"] <= MAX_MOVEMENT_DURATION
+    ]
+    plm_candidates.sort(key=lambda e: e["timestamp_sec"])
 
     # Build chains of consecutive events with valid inter-movement intervals
     chains = []
     current_chain = []
 
-    for event in duration_valid:
+    for event in plm_candidates:
         if not current_chain:
             current_chain.append(event)
             continue
@@ -54,12 +72,12 @@ def apply_plms_criteria(events: list[dict], recording_hours: float) -> dict:
     series_list = []
     plm_count = 0
     for series_idx, chain in enumerate(chains, start=1):
-        event_ids = []
+        event_timestamps = []
         intervals = []
         for i, event in enumerate(chain):
             event["is_plm"] = True
             event["series_id"] = series_idx
-            event_ids.append(event["timestamp_sec"])
+            event_timestamps.append(event["timestamp_sec"])
             if i > 0:
                 intervals.append(event["onset_sec"] - chain[i - 1]["onset_sec"])
             plm_count += 1
@@ -67,16 +85,15 @@ def apply_plms_criteria(events: list[dict], recording_hours: float) -> dict:
         series_list.append({
             "id": series_idx,
             "event_count": len(chain),
-            "event_timestamps": event_ids,
+            "event_timestamps": event_timestamps,
             "mean_interval_sec": round(sum(intervals) / len(intervals), 1) if intervals else 0,
             "start_sec": chain[0]["timestamp_sec"],
             "end_sec": chain[-1]["timestamp_sec"],
         })
 
     # Rebuild full event list preserving order
-    # Map PLM-tagged events back by timestamp
     plm_map = {}
-    for e in duration_valid:
+    for e in plm_candidates:
         if e["is_plm"]:
             plm_map[e["timestamp_sec"]] = e
 
@@ -92,6 +109,8 @@ def apply_plms_criteria(events: list[dict], recording_hours: float) -> dict:
 
     plmi = round(plm_count / recording_hours, 1) if recording_hours > 0 else 0
 
+    body_movement_count = sum(1 for e in result_events if e["movement_type"] == "body")
+
     return {
         "events": result_events,
         "series": series_list,
@@ -101,5 +120,6 @@ def apply_plms_criteria(events: list[dict], recording_hours: float) -> dict:
             "plmi": plmi,
             "series_count": len(series_list),
             "recording_hours": round(recording_hours, 2),
+            "body_movements": body_movement_count,
         },
     }
