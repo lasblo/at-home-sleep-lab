@@ -1,7 +1,9 @@
 import json
+import multiprocessing
 import os
 import re
 import threading
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request
@@ -12,6 +14,9 @@ from filename_parser import parse_filename
 from nights import group_videos_into_nights, compute_night_summary
 from pipeline import process_video
 from plms import apply_plms_criteria
+
+# Parallel workers: use half the CPU cores (leave room for system/UI)
+MAX_WORKERS = max(2, (os.cpu_count() or 4) // 2)
 
 app = FastAPI(title="PLMS Detector")
 app.add_middleware(
@@ -106,67 +111,120 @@ async def serve_video(filename: str, request: Request):
 
 # --- Processing ---
 
+def _process_one_video(args):
+    """Worker function for parallel processing. Must be top-level for pickling."""
+    video_path_str, vid, output_dir_str, progress_dict = args
+    from pipeline import process_video
+    from plms import apply_plms_criteria
+    import json
+    from pathlib import Path
+
+    video_path = Path(video_path_str)
+    output_dir = Path(output_dir_str)
+
+    def progress_cb(pct):
+        progress_dict[vid] = pct
+
+    result = process_video(video_path, progress_cb)
+    return vid, result
+
+
 def _run_processing():
     try:
         videos = _list_videos()
-        _processing["progress"] = {v["id"]: 0.0 for v in videos}
+        # Skip already-processed videos
+        to_process = [v for v in videos if not (OUTPUT_DIR / f"{v['id']}.json").exists()]
 
-        all_events = []
-        total_hours = 0.0
-
+        manager = multiprocessing.Manager()
+        shared_progress = manager.dict({v["id"]: 0.0 for v in to_process})
+        # Mark already-done videos as 1.0
         for v in videos:
-            vid = v["id"]
-            video_path = VIDEOS_DIR / v["filename"]
+            if v not in to_process:
+                shared_progress[v["id"]] = 1.0
+        _processing["progress"] = shared_progress
 
-            def progress_cb(pct, _vid=vid):
-                _processing["progress"][_vid] = pct
+        if not to_process:
+            _write_combined(videos)
+            return
 
-            result = process_video(video_path, progress_cb)
-            recording_hours = v["duration_sec"] / 3600.0
-            total_hours += recording_hours
+        worker_args = [
+            (str(VIDEOS_DIR / v["filename"]), v["id"], str(OUTPUT_DIR), shared_progress)
+            for v in to_process
+        ]
 
-            plms_result = apply_plms_criteria(result["events"], recording_hours)
+        n_workers = min(MAX_WORKERS, len(to_process))
+        with ProcessPoolExecutor(max_workers=n_workers) as pool:
+            futures = {pool.submit(_process_one_video, args): args[1] for args in worker_args}
 
-            output = {
-                "video": v,
-                "video_info": result["video_info"],
-                "motion_signal": result["motion_signal"],
-                **plms_result,
-            }
+            for future in as_completed(futures):
+                vid = futures[future]
+                try:
+                    _, result = future.result()
+                except Exception as e:
+                    _processing["error"] = f"Video {vid}: {e}"
+                    shared_progress[vid] = -1
+                    continue
 
-            out_path = OUTPUT_DIR / f"{vid}.json"
-            with open(out_path, "w") as f:
-                json.dump(output, f)
+                # Find the matching video metadata
+                v = next(v for v in videos if v["id"] == vid)
+                recording_hours = v["duration_sec"] / 3600.0
+                plms_result = apply_plms_criteria(result["events"], recording_hours)
 
-            all_events.extend([
-                {**e, "video_id": vid, "absolute_sec": e["timestamp_sec"] + (total_hours - recording_hours) * 3600}
-                for e in plms_result["events"]
-            ])
+                output = {
+                    "video": v,
+                    "video_info": result["video_info"],
+                    "motion_signal": result["motion_signal"],
+                    **plms_result,
+                }
 
-            _processing["progress"][vid] = 1.0
+                out_path = OUTPUT_DIR / f"{vid}.json"
+                with open(out_path, "w") as f:
+                    json.dump(output, f)
 
-        # Combined summary
-        total_plm = sum(1 for e in all_events if e.get("is_plm"))
-        combined = {
-            "videos": videos,
-            "total_hours": round(total_hours, 2),
-            "total_movements": len(all_events),
-            "plm_count": total_plm,
-            "plmi": round(total_plm / total_hours, 1) if total_hours > 0 else 0,
-            "series_count": sum(
-                len(json.load(open(OUTPUT_DIR / f"{v['id']}.json")).get("series", []))
-                for v in videos
-                if (OUTPUT_DIR / f"{v['id']}.json").exists()
-            ),
-        }
-        with open(OUTPUT_DIR / "combined.json", "w") as f:
-            json.dump(combined, f)
+                shared_progress[vid] = 1.0
+
+        _write_combined(videos)
 
     except Exception as e:
         _processing["error"] = str(e)
         raise
     finally:
         _processing["running"] = False
+
+
+def _write_combined(videos):
+    """Write combined.json from all processed video outputs."""
+    all_events = []
+    total_hours = 0.0
+
+    for v in sorted(videos, key=lambda v: v["start_local"]):
+        vid = v["id"]
+        out_path = OUTPUT_DIR / f"{vid}.json"
+        if not out_path.exists():
+            continue
+        data = json.load(open(out_path))
+        recording_hours = v["duration_sec"] / 3600.0
+        all_events.extend([
+            {**e, "video_id": vid, "absolute_sec": e["timestamp_sec"] + total_hours * 3600}
+            for e in data["events"]
+        ])
+        total_hours += recording_hours
+
+    total_plm = sum(1 for e in all_events if e.get("is_plm"))
+    combined = {
+        "videos": videos,
+        "total_hours": round(total_hours, 2),
+        "total_movements": len(all_events),
+        "plm_count": total_plm,
+        "plmi": round(total_plm / total_hours, 1) if total_hours > 0 else 0,
+        "series_count": sum(
+            len(json.load(open(OUTPUT_DIR / f"{v['id']}.json")).get("series", []))
+            for v in videos
+            if (OUTPUT_DIR / f"{v['id']}.json").exists()
+        ),
+    }
+    with open(OUTPUT_DIR / "combined.json", "w") as f:
+        json.dump(combined, f)
 
 
 @app.post("/api/process")
@@ -234,9 +292,11 @@ async def start_single_processing(video_id: str):
 
 @app.get("/api/process/status")
 async def processing_status():
+    # Convert Manager dict to plain dict for JSON serialization
+    progress = _processing["progress"]
     return {
         "running": _processing["running"],
-        "progress": _processing["progress"],
+        "progress": dict(progress) if progress else {},
         "error": _processing["error"],
     }
 
@@ -280,28 +340,28 @@ async def list_nights():
     nights = group_videos_into_nights(videos)
     result = []
     for night in nights:
-        # Check if any videos are processed
-        has_data = any(
-            (OUTPUT_DIR / f"{vid}.json").exists()
-            for vid in night["video_ids"]
+        videos_total = len(night["video_ids"])
+        videos_processed = sum(
+            1 for vid in night["video_ids"]
+            if (OUTPUT_DIR / f"{vid}.json").exists()
         )
-        if has_data:
+        base = {
+            "night_date": night["night_date"],
+            "start_local": night["start_local"],
+            "end_local": night["end_local"],
+            "total_hours": night["total_hours"],
+            "video_ids": night["video_ids"],
+            "videos_total": videos_total,
+            "videos_processed": videos_processed,
+        }
+        if videos_processed > 0:
             summary = compute_night_summary(night, OUTPUT_DIR)
-            result.append({
-                "night_date": night["night_date"],
-                "start_local": night["start_local"],
-                "end_local": night["end_local"],
-                "total_hours": night["total_hours"],
-                "video_ids": night["video_ids"],
-                "summary": summary["summary"],
-                "hourly_distribution": summary["hourly_distribution"],
-            })
+            base["summary"] = summary["summary"]
+            base["hourly_distribution"] = summary["hourly_distribution"]
         else:
-            result.append({
-                **night,
-                "summary": None,
-                "hourly_distribution": None,
-            })
+            base["summary"] = None
+            base["hourly_distribution"] = None
+        result.append(base)
     return result
 
 

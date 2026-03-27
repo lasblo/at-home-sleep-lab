@@ -214,7 +214,7 @@ export default function App() {
       {/* Body */}
       <div style={styles.body}>
         {view === 'dashboard' ? (
-          <Dashboard nights={nights} onSelectNight={handleSelectNight} />
+          <Dashboard nights={nights} onSelectNight={handleSelectNight} processing={processing} />
         ) : (
           <div style={styles.main}>
             {/* Night analytics panel */}

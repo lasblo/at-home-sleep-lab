@@ -170,27 +170,65 @@ function PLMITrendChart({ nights, onSelectNight }) {
   )
 }
 
-// --- Night Card ---
-function NightCard({ night, onClick }) {
+// --- Night Card (3 states: ready, processing, pending) ---
+function NightCard({ night, onClick, processing }) {
   const s = night.summary
-  if (!s) return null
+  const total = night.videos_total || night.video_ids?.length || 0
+  const processed = night.videos_processed ?? 0
+
+  // Determine if any videos in this night are currently processing
+  const progress = processing?.progress || {}
+  const videoIds = night.video_ids || []
+  const processingCount = videoIds.filter(id => id in progress && progress[id] < 1).length
+  const isProcessing = processing?.running && processingCount > 0
+
+  const isReady = !!s
+  const isPending = !isReady && !isProcessing
+  const dimmed = !isReady
 
   return (
-    <div style={styles.card} onClick={() => onClick(night.night_date)}>
+    <div
+      style={{ ...styles.card, ...(dimmed ? styles.cardDimmed : {}) }}
+      onClick={() => onClick(night.night_date)}
+    >
       <div style={styles.cardHeader}>
         <span style={styles.cardDate}>{formatDate(night.night_date)}</span>
-        <span style={{ ...styles.plmiBadge, background: plmiColor(s.plmi) }}>
-          {s.plmi} PLMI — {plmiSeverity(s.plmi)}
-        </span>
+        {isReady ? (
+          <span style={{ ...styles.plmiBadge, background: plmiColor(s.plmi) }}>
+            {s.plmi} PLMI — {plmiSeverity(s.plmi)}
+          </span>
+        ) : isProcessing ? (
+          <span style={{ ...styles.statusBadge, background: '#3b82f6' }}>Processing</span>
+        ) : (
+          <span style={{ ...styles.statusBadge, background: 'rgba(255,255,255,0.1)' }}>Not processed</span>
+        )}
       </div>
-      <div style={styles.cardStats}>
-        <span><strong>{s.plm_count}</strong> PLMs</span>
-        <span><strong>{s.series_count}</strong> series</span>
-        <span><strong>{s.body_movements || 0}</strong> body moves</span>
-        <span><strong>{night.total_hours}</strong>h recorded</span>
-      </div>
-      {night.hourly_distribution && (
-        <HourlyMiniBar hourly={night.hourly_distribution} />
+
+      {isReady ? (
+        <>
+          <div style={styles.cardStats}>
+            <span><strong>{s.plm_count}</strong> PLMs</span>
+            <span><strong>{s.series_count}</strong> series</span>
+            <span><strong>{s.body_movements || 0}</strong> body moves</span>
+            <span><strong>{night.total_hours}</strong>h recorded</span>
+          </div>
+          {night.hourly_distribution && (
+            <HourlyMiniBar hourly={night.hourly_distribution} />
+          )}
+        </>
+      ) : (
+        <div style={styles.cardStats}>
+          <span><strong>{total}</strong> {total === 1 ? 'video' : 'videos'}</span>
+          <span><strong>{night.total_hours}</strong>h recorded</span>
+          {isProcessing && (
+            <span style={{ color: '#3b82f6' }}>
+              {processed}/{total} done
+            </span>
+          )}
+          {isPending && processed > 0 && (
+            <span>{processed}/{total} processed</span>
+          )}
+        </div>
       )}
     </div>
   )
@@ -244,7 +282,7 @@ function HourlyMiniBar({ hourly }) {
 }
 
 // --- Main Dashboard ---
-export default function Dashboard({ nights, onSelectNight }) {
+export default function Dashboard({ nights, onSelectNight, processing }) {
   const scored = nights.filter(n => n.summary)
 
   // Compute rolling averages if enough data
@@ -252,6 +290,9 @@ export default function Dashboard({ nights, onSelectNight }) {
   if (scored.length > 0) {
     avgPLMI = scored.reduce((sum, n) => sum + n.summary.plmi, 0) / scored.length
   }
+
+  // Sort all nights by date descending (most recent first)
+  const sorted = [...nights].sort((a, b) => b.night_date.localeCompare(a.night_date))
 
   return (
     <div style={styles.root}>
@@ -264,7 +305,7 @@ export default function Dashboard({ nights, onSelectNight }) {
           </span>
           <span style={styles.summaryItem}>
             <strong>{scored.length}</strong>
-            <span style={styles.summaryLabel}>{scored.length === 1 ? 'Night' : 'Nights'}</span>
+            <span style={styles.summaryLabel}>{scored.length === 1 ? 'Night' : 'Nights'} analyzed</span>
           </span>
           <span style={styles.summaryItem}>
             <strong>{scored.reduce((sum, n) => sum + n.summary.plm_count, 0)}</strong>
@@ -274,19 +315,27 @@ export default function Dashboard({ nights, onSelectNight }) {
             <strong>{scored.reduce((sum, n) => sum + n.total_hours, 0).toFixed(1)}h</strong>
             <span style={styles.summaryLabel}>Total Recorded</span>
           </span>
+          {nights.length > scored.length && (
+            <span style={styles.summaryItem}>
+              <strong>{nights.length - scored.length}</strong>
+              <span style={styles.summaryLabel}>Pending</span>
+            </span>
+          )}
         </div>
       )}
 
-      {/* PLMI Trend Chart */}
-      <PLMITrendChart nights={nights} onSelectNight={onSelectNight} />
+      {/* PLMI Trend Chart — only if we have processed data */}
+      {scored.length > 0 && (
+        <PLMITrendChart nights={nights} onSelectNight={onSelectNight} />
+      )}
 
-      {/* Night cards */}
+      {/* Night cards — ALL nights */}
       <div style={styles.cardList}>
-        {scored.length === 0 ? (
-          <div style={styles.empty}>No processed nights yet. Process videos to see analytics.</div>
+        {sorted.length === 0 ? (
+          <div style={styles.empty}>No videos found. Add MP4 files to the videos/ directory.</div>
         ) : (
-          scored.map(n => (
-            <NightCard key={n.night_date} night={n} onClick={onSelectNight} />
+          sorted.map(n => (
+            <NightCard key={n.night_date} night={n} onClick={onSelectNight} processing={processing} />
           ))
         )}
       </div>
@@ -359,6 +408,18 @@ const styles = {
     fontSize: 14,
   },
   plmiBadge: {
+    fontSize: 11,
+    fontWeight: 600,
+    color: '#fff',
+    padding: '2px 8px',
+    borderRadius: 4,
+    fontFamily: 'var(--mono)',
+  },
+  cardDimmed: {
+    opacity: 0.55,
+    borderStyle: 'dashed',
+  },
+  statusBadge: {
     fontSize: 11,
     fontWeight: 600,
     color: '#fff',
