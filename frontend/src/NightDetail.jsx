@@ -159,10 +159,20 @@ function SegmentList({ videos, selectedId, onSelectVideo, horizontal }) {
 }
 
 // --- Main NightDetail ---
-export default function NightDetail({ nightData, onBack, onSelectVideo, selectedVideoId }) {
+export default function NightDetail({ nightData, onBack, onSelectVideo, selectedVideoId, processing }) {
   if (!nightData) return null
 
   const s = nightData.summary
+  const isProcessing = processing?.running
+
+  const handleReprocess = () => {
+    if (isProcessing) return
+    fetch(`/api/reprocess-night/${nightData.night_date}`, { method: 'POST' })
+      .then(r => r.json())
+      .then(d => {
+        if (d.status === 'already_running') alert('Processing already running')
+      })
+  }
 
   return (
     <div style={styles.root}>
@@ -196,6 +206,13 @@ export default function NightDetail({ nightData, onBack, onSelectVideo, selected
             <span style={styles.statLabel}>Recorded</span>
           </span>
         </div>
+        <button
+          style={isProcessing ? styles.reprocessBtnDisabled : styles.reprocessBtn}
+          onClick={handleReprocess}
+          disabled={isProcessing}
+        >
+          {isProcessing ? 'Processing...' : 'Reprocess Night'}
+        </button>
       </div>
 
       {/* Charts row — collapse when a video is selected to save space */}
@@ -256,6 +273,31 @@ const styles = {
     background: 'var(--surface)',
     borderRadius: 8,
     border: '1px solid var(--border)',
+    flexWrap: 'wrap',
+  },
+  reprocessBtn: {
+    marginLeft: 'auto',
+    background: 'none',
+    border: '1px solid rgba(255,255,255,0.15)',
+    color: 'rgba(255,255,255,0.6)',
+    padding: '4px 12px',
+    borderRadius: 4,
+    cursor: 'pointer',
+    fontSize: 11,
+    fontFamily: 'var(--mono)',
+    whiteSpace: 'nowrap',
+  },
+  reprocessBtnDisabled: {
+    marginLeft: 'auto',
+    background: 'none',
+    border: '1px solid rgba(255,255,255,0.08)',
+    color: 'rgba(255,255,255,0.25)',
+    padding: '4px 12px',
+    borderRadius: 4,
+    cursor: 'not-allowed',
+    fontSize: 11,
+    fontFamily: 'var(--mono)',
+    whiteSpace: 'nowrap',
   },
   backBtn: {
     background: 'none',

@@ -336,6 +336,67 @@ async def reanalyze_video(video_id: str):
     return {"status": "started"}
 
 
+@app.post("/api/reprocess-night/{night_date}")
+async def reprocess_night(night_date: str):
+    """Reprocess all videos for a given night date (e.g. 2026-03-26)."""
+    if _processing["running"]:
+        return {"status": "already_running"}
+
+    videos = _list_videos()
+    nights = group_videos_into_nights(videos)
+    night = next((n for n in nights if n["night_date"] == night_date), None)
+    if not night:
+        return {"status": "error", "error": f"Night {night_date} not found"}
+
+    video_ids = night["video_ids"]
+
+    _processing["running"] = True
+    _processing["error"] = None
+    _processing["progress"] = {vid: 0.0 for vid in video_ids}
+
+    def run():
+        try:
+            for vid in video_ids:
+                v = next((v for v in videos if v["id"] == vid), None)
+                if not v:
+                    continue
+
+                # Delete existing output
+                out_path = OUTPUT_DIR / f"{vid}.json"
+                if out_path.exists():
+                    out_path.unlink()
+
+                video_path = VIDEOS_DIR / v["filename"]
+
+                def progress_cb(pct, _vid=vid):
+                    _processing["progress"][_vid] = pct
+
+                result = process_video(video_path, progress_cb)
+                recording_hours = v["duration_sec"] / 3600.0
+                plms_result = apply_plms_criteria(result["events"], recording_hours)
+                output = {
+                    "video": v,
+                    "video_info": result["video_info"],
+                    "motion_signal": result["motion_signal"],
+                    **plms_result,
+                }
+
+                with open(out_path, "w") as f:
+                    json.dump(output, f)
+
+                _processing["progress"][vid] = 1.0
+
+            _write_combined(videos)
+        except Exception as e:
+            _processing["error"] = str(e)
+        finally:
+            _processing["running"] = False
+
+    thread = threading.Thread(target=run, daemon=True)
+    thread.start()
+    return {"status": "started", "video_count": len(video_ids)}
+
+
 @app.get("/api/process/status")
 async def processing_status():
     # Convert Manager dict to plain dict for JSON serialization

@@ -229,6 +229,7 @@ export default function App() {
               onBack={handleBack}
               onSelectVideo={handleSelectVideo}
               selectedVideoId={selectedVideoId}
+              processing={processing}
             />
 
             {/* Video player + timeline + events (when a segment is selected) */}
