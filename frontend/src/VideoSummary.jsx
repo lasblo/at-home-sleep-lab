@@ -46,29 +46,35 @@ function plmiColor(plmi) {
 }
 
 export default function VideoSummary({ results, videoId, onReanalyze, processing }) {
-  if (!results?.summary) return null
+  if (!results) return null
   const s = results.summary
   const isReanalyzing = processing?.running && videoId && processing?.progress?.[videoId] != null
   const hasDebug = results.events?.some(e => e.debug)
 
   return (
     <div style={styles.container}>
-      <div style={styles.stat}>
-        <span style={styles.val(plmiColor(s.plmi))}>{s.plmi}</span>
-        <span style={styles.label}>PLMI</span>
-      </div>
-      <div style={styles.stat}>
-        <span style={styles.val('#ef4444')}>{s.plm_count}</span>
-        <span style={styles.label}>PLMs</span>
-      </div>
-      <div style={styles.stat}>
-        <span style={styles.val()}>{s.series_count}</span>
-        <span style={styles.label}>Series</span>
-      </div>
-      <div style={styles.stat}>
-        <span style={styles.val()}>{s.total_movements}</span>
-        <span style={styles.label}>Events</span>
-      </div>
+      {s ? (
+        <>
+          <div style={styles.stat}>
+            <span style={styles.val(plmiColor(s.plmi))}>{s.plmi}</span>
+            <span style={styles.label}>PLMI</span>
+          </div>
+          <div style={styles.stat}>
+            <span style={styles.val('#ef4444')}>{s.plm_count}</span>
+            <span style={styles.label}>PLMs</span>
+          </div>
+          <div style={styles.stat}>
+            <span style={styles.val()}>{s.series_count}</span>
+            <span style={styles.label}>Series</span>
+          </div>
+          <div style={styles.stat}>
+            <span style={styles.val()}>{s.total_movements}</span>
+            <span style={styles.label}>Events</span>
+          </div>
+        </>
+      ) : (
+        <span style={{ fontSize: 11, color: 'var(--text-dim)' }}>No summary — reanalyze to generate</span>
+      )}
       <div style={{ marginLeft: 'auto', display: 'flex', gap: 8, alignItems: 'center' }}>
         {hasDebug && <span style={{ fontSize: 10, color: '#22c55e' }}>debug info available</span>}
         <button

@@ -15,19 +15,10 @@ from nights import group_videos_into_nights, compute_night_summary
 from pipeline import process_video
 from plms import apply_plms_criteria
 
-# Swift/Metal binary path (hardware-accelerated pipeline)
-SWIFT_BINARY = Path(__file__).parent.parent / "swift-motion" / ".build" / "release" / "plms-motion"
-
-# Parallel workers for batch processing (Python/OpenCV software decode)
+# Parallel workers for batch processing
 MAX_WORKERS = max(2, (os.cpu_count() or 4) // 2)
 
 app = FastAPI(title="PLMS Detector")
-
-# Log processing backend
-if SWIFT_BINARY.exists():
-    print(f"[PLMS] Using Swift/Metal backend: {SWIFT_BINARY}")
-else:
-    print("[PLMS] Swift binary not found, using Python/OpenCV fallback")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:5173"],
@@ -121,53 +112,8 @@ async def serve_video(filename: str, request: Request):
 # --- Processing ---
 
 def _process_one_video(args):
-    """Worker function for parallel processing. Must be top-level for pickling.
-
-    Uses Python/OpenCV for batch processing — software decode across all CPU cores
-    scales better than hardware decoder with multiple concurrent streams.
-    Swift/Metal is used for single-video processing (lower latency).
-    """
+    """Worker function for parallel processing. Must be top-level for pickling."""
     video_path_str, vid, output_dir_str, progress_dict = args
-    return _process_one_video_python(video_path_str, vid, progress_dict)
-
-
-def _process_one_video_swift(video_path_str, vid, progress_dict):
-    """Process video using Swift/Metal CLI — hardware-accelerated."""
-    import subprocess, json, threading
-
-    proc = subprocess.Popen(
-        [str(SWIFT_BINARY), "process", video_path_str, "--progress"],
-        stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-    )
-
-    # Read stderr for progress updates in a background thread
-    def read_progress():
-        for line in proc.stderr:
-            text = line.decode().strip()
-            if text.startswith("PROGRESS:"):
-                try:
-                    pct = float(text.split(":")[1])
-                    progress_dict[vid] = pct
-                except (ValueError, IndexError):
-                    pass
-
-    progress_thread = threading.Thread(target=read_progress, daemon=True)
-    progress_thread.start()
-
-    # Read stdout separately (don't use communicate() which fights the stderr thread)
-    stdout = proc.stdout.read()
-    proc.wait()
-    progress_thread.join(timeout=2)
-
-    if proc.returncode != 0:
-        raise RuntimeError(f"Swift CLI exited with code {proc.returncode}")
-
-    result = json.loads(stdout)
-    return vid, result
-
-
-def _process_one_video_python(video_path_str, vid, progress_dict):
-    """Process video using Python/OpenCV — CPU fallback."""
     from pipeline import process_video
     from pathlib import Path
 
@@ -218,19 +164,14 @@ def _run_processing():
 
                 v = next(v for v in videos if v["id"] == vid)
 
-                if SWIFT_BINARY.exists():
-                    # Swift CLI returns complete result with events/series/summary
-                    output = {"video": v, **result}
-                else:
-                    # Python pipeline returns raw events; apply PLMS criteria
-                    recording_hours = v["duration_sec"] / 3600.0
-                    plms_result = apply_plms_criteria(result["events"], recording_hours)
-                    output = {
-                        "video": v,
-                        "video_info": result["video_info"],
-                        "motion_signal": result["motion_signal"],
-                        **plms_result,
-                    }
+                recording_hours = v["duration_sec"] / 3600.0
+                plms_result = apply_plms_criteria(result["events"], recording_hours)
+                output = {
+                    "video": v,
+                    "video_info": result["video_info"],
+                    "motion_signal": result["motion_signal"],
+                    **plms_result,
+                }
 
                 out_path = OUTPUT_DIR / f"{vid}.json"
                 with open(out_path, "w") as f:
@@ -306,22 +247,18 @@ def _run_single_processing(video_id: str):
         _processing["progress"] = {vid: 0.0}
         video_path = VIDEOS_DIR / v["filename"]
 
-        if SWIFT_BINARY.exists():
-            _, result = _process_one_video_swift(str(video_path), vid, _processing["progress"])
-            output = {"video": v, **result}
-        else:
-            def progress_cb(pct, _vid=vid):
-                _processing["progress"][_vid] = pct
+        def progress_cb(pct, _vid=vid):
+            _processing["progress"][_vid] = pct
 
-            result = process_video(video_path, progress_cb)
-            recording_hours = v["duration_sec"] / 3600.0
-            plms_result = apply_plms_criteria(result["events"], recording_hours)
-            output = {
-                "video": v,
-                "video_info": result["video_info"],
-                "motion_signal": result["motion_signal"],
-                **plms_result,
-            }
+        result = process_video(video_path, progress_cb)
+        recording_hours = v["duration_sec"] / 3600.0
+        plms_result = apply_plms_criteria(result["events"], recording_hours)
+        output = {
+            "video": v,
+            "video_info": result["video_info"],
+            "motion_signal": result["motion_signal"],
+            **plms_result,
+        }
 
         out_path = OUTPUT_DIR / f"{vid}.json"
         with open(out_path, "w") as f:
@@ -350,8 +287,7 @@ async def start_single_processing(video_id: str):
 
 @app.post("/api/reanalyze/{video_id}")
 async def reanalyze_video(video_id: str):
-    """Reprocess a single video, overwriting existing output. Uses Python pipeline
-    (with debug info) even if Swift is available, to get full decision chain."""
+    """Reprocess a single video, overwriting existing output with full debug decision chain."""
     if _processing["running"]:
         return {"status": "already_running"}
     _processing["running"] = True
