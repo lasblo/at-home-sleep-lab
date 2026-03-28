@@ -49,14 +49,19 @@ export function WhoopCard() {
   const bleConfigured = !!bleSettings?.url
 
   const [editing, setEditing] = useState(false)
-  const [devices, setDevices] = useState<Array<{ address: string; name: string }>>([])
+  const [devices, setDevices] = useState<
+    Array<{ address: string; name: string }>
+  >([])
   const [selectedDevice, setSelectedDevice] = useState("")
   const [testHr, setTestHr] = useState<number | null>(null)
 
-  const isConfigured = !!(whoopSettings?.enabled && whoopSettings?.device_address)
+  const isConfigured = !!(
+    whoopSettings?.enabled && whoopSettings?.device_address
+  )
 
   useEffect(() => {
-    if (whoopSettings?.device_address) setSelectedDevice(whoopSettings.device_address)
+    if (whoopSettings?.device_address)
+      setSelectedDevice(whoopSettings.device_address)
   }, [whoopSettings])
 
   const discover = useMutation({
@@ -67,8 +72,12 @@ export function WhoopCard() {
     onSuccess: (data) => {
       if (data.ok) {
         setDevices(data.devices)
-        if (data.devices.length === 0) toast.info("No HR devices found. Make sure WHOOP is nearby and awake.")
-        else if (data.devices.length === 1) setSelectedDevice(data.devices[0].address)
+        if (data.devices.length === 0)
+          toast.info(
+            "No HR devices found. Make sure WHOOP is nearby and awake."
+          )
+        else if (data.devices.length === 1)
+          setSelectedDevice(data.devices[0].address)
       } else {
         toast.error(data.error || "Discovery failed. Is Bluetooth configured?")
       }
@@ -96,7 +105,10 @@ export function WhoopCard() {
 
   const save = useMutation({
     mutationFn: async () => {
-      const deviceName = devices.find((d) => d.address === selectedDevice)?.name || whoopSettings?.device_name || selectedDevice
+      const deviceName =
+        devices.find((d) => d.address === selectedDevice)?.name ||
+        whoopSettings?.device_name ||
+        selectedDevice
       const res = await fetch("/api/settings/whoop", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
@@ -154,13 +166,20 @@ export function WhoopCard() {
                   {whoopSettings.device_address}
                 </span>
               </div>
-              <Badge variant="secondary" className="bg-severity-normal/15 text-severity-normal text-[10px]">
+              <Badge
+                variant="secondary"
+                className="bg-severity-normal/15 text-[10px] text-severity-normal"
+              >
                 Configured
               </Badge>
             </div>
           </CardContent>
           <CardFooter className="gap-2">
-            <Button variant="outline" size="sm" onClick={() => setEditing(true)}>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setEditing(true)}
+            >
               Reconfigure
             </Button>
             <Button
@@ -192,7 +211,9 @@ export function WhoopCard() {
                 onClick={() => discover.mutate()}
                 disabled={!bleConfigured || discover.isPending}
               >
-                {discover.isPending ? <Spinner data-icon="inline-start" /> : null}
+                {discover.isPending ? (
+                  <Spinner data-icon="inline-start" />
+                ) : null}
                 Scan for Devices
               </Button>
               {devices.length > 0 && (
@@ -208,7 +229,13 @@ export function WhoopCard() {
                 <Separator />
                 <div className="flex flex-col gap-2">
                   <Label>Device</Label>
-                  <Select value={selectedDevice} onValueChange={(v) => { setSelectedDevice(v); setTestHr(null) }}>
+                  <Select
+                    value={selectedDevice}
+                    onValueChange={(v) => {
+                      setSelectedDevice(v)
+                      setTestHr(null)
+                    }}
+                  >
                     <SelectTrigger>
                       <SelectValue placeholder="Select your WHOOP" />
                     </SelectTrigger>
@@ -233,11 +260,16 @@ export function WhoopCard() {
                       onClick={() => testDevice.mutate()}
                       disabled={testDevice.isPending}
                     >
-                      {testDevice.isPending ? <Spinner data-icon="inline-start" /> : null}
+                      {testDevice.isPending ? (
+                        <Spinner data-icon="inline-start" />
+                      ) : null}
                       Test HR Reading
                     </Button>
                     {testHr != null && (
-                      <Badge variant="secondary" className="bg-severity-normal/15 text-severity-normal">
+                      <Badge
+                        variant="secondary"
+                        className="bg-severity-normal/15 text-severity-normal"
+                      >
                         <CheckCircle2 className="mr-0.5" />
                         {testHr} bpm
                       </Badge>

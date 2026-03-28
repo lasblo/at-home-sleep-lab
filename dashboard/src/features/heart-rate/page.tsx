@@ -34,7 +34,12 @@ import { formatDate } from "@/shared/lib/utils"
 
 export default function HeartRatePage() {
   const navigate = useNavigate()
-  const { data: sessions, isLoading: sessionsLoading, isError, refetch } = useSessions()
+  const {
+    data: sessions,
+    isLoading: sessionsLoading,
+    isError,
+    refetch,
+  } = useSessions()
   const { data: hrStatus } = useQuery({
     queryKey: ["hr", "status"],
     queryFn: async () => {
@@ -46,11 +51,13 @@ export default function HeartRatePage() {
   })
 
   const hrSessions = useMemo(
-    () => (sessions ?? []).filter((s) => s.hr_enabled && s.status === "analyzed"),
+    () =>
+      (sessions ?? []).filter((s) => s.hr_enabled && s.status === "analyzed"),
     [sessions]
   )
 
-  const isConnected = hrStatus?.status === "connected" || hrStatus?.status === "streaming"
+  const isConnected =
+    hrStatus?.status === "connected" || hrStatus?.status === "streaming"
 
   if (isError) {
     return <ErrorState title="Failed to load heart rate data" retry={refetch} />
@@ -86,11 +93,14 @@ export default function HeartRatePage() {
               <>
                 <Wifi className="size-5 text-severity-normal" />
                 <div className="flex flex-col gap-0.5">
-                  <Badge variant="secondary" className="bg-severity-normal/15 text-severity-normal">
+                  <Badge
+                    variant="secondary"
+                    className="bg-severity-normal/15 text-severity-normal"
+                  >
                     Connected
                   </Badge>
                   {hrStatus?.hr && (
-                    <span className="text-lg font-semibold tabular-nums text-chart-3">
+                    <span className="text-lg font-semibold text-chart-3 tabular-nums">
                       {hrStatus.hr} bpm
                     </span>
                   )}
@@ -160,7 +170,10 @@ export default function HeartRatePage() {
                         {s.total_hours ? `${s.total_hours.toFixed(1)}h` : "-"}
                       </TableCell>
                       <TableCell>
-                        <Badge variant="secondary" className="bg-severity-normal/15 text-severity-normal text-[10px]">
+                        <Badge
+                          variant="secondary"
+                          className="bg-severity-normal/15 text-[10px] text-severity-normal"
+                        >
                           Analyzed
                         </Badge>
                       </TableCell>

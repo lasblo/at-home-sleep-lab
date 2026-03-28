@@ -30,7 +30,10 @@ interface AggregateHourlyChartProps {
   nightCount: number
 }
 
-export function AggregateHourlyChart({ data, nightCount }: AggregateHourlyChartProps) {
+export function AggregateHourlyChart({
+  data,
+  nightCount,
+}: AggregateHourlyChartProps) {
   if (data.length === 0) return null
 
   return (

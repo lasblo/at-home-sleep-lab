@@ -37,7 +37,9 @@ export function VideoSummary({ results }: VideoSummaryProps) {
           <span className="font-semibold">{s.total_movements}</span>&nbsp;Events
         </Badge>
         {results.events.some((e) => e.debug) && (
-          <span className="text-[10px] text-severity-normal">debug info available</span>
+          <span className="text-[10px] text-severity-normal">
+            debug info available
+          </span>
         )}
       </CardContent>
     </Card>

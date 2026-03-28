@@ -38,7 +38,10 @@ const statusBadge: Record<string, React.ReactNode> = {
     </Badge>
   ),
   analyzed: (
-    <Badge variant="secondary" className="bg-severity-normal/15 text-severity-normal text-[10px]">
+    <Badge
+      variant="secondary"
+      className="bg-severity-normal/15 text-[10px] text-severity-normal"
+    >
       Analyzed
     </Badge>
   ),
@@ -113,7 +116,7 @@ export default function SessionsPage() {
                 <TableCell className="font-medium">
                   {formatDate(s.night_date)}
                 </TableCell>
-                <TableCell className="tabular-nums text-muted-foreground">
+                <TableCell className="text-muted-foreground tabular-nums">
                   {new Date(s.started_at).toLocaleTimeString("en-US", {
                     hour: "2-digit",
                     minute: "2-digit",

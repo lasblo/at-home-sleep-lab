@@ -66,7 +66,8 @@ export function MotionTimeline({
     const movColor = styles.getPropertyValue("--chart-2").trim() || "#f59e0b"
     const hrColor = "oklch(0.656 0.241 354)"
     const fgDim = styles.getPropertyValue("--muted-foreground").trim() || "#888"
-    const primaryColor = styles.getPropertyValue("--primary").trim() || "#4f8ff7"
+    const primaryColor =
+      styles.getPropertyValue("--primary").trim() || "#4f8ff7"
 
     // Motion signal
     if (vals.length > 0) {
@@ -143,10 +144,12 @@ export function MotionTimeline({
 
     // HR curve
     if (hrData && hrData.length > 0 && videoStartEpoch) {
-      const hrs = hrData.map((r) => ({
-        t: r.epoch - videoStartEpoch,
-        hr: r.hr,
-      })).filter((r) => r.t >= 0 && r.t <= dur)
+      const hrs = hrData
+        .map((r) => ({
+          t: r.epoch - videoStartEpoch,
+          hr: r.hr,
+        }))
+        .filter((r) => r.t >= 0 && r.t <= dur)
 
       if (hrs.length > 1) {
         const hrVals = hrs.map((r) => r.hr)
@@ -187,11 +190,7 @@ export function MotionTimeline({
       const x = PAD.left + (t / dur) * cw
       const mins = Math.floor(t / 60)
       const secs = Math.floor(t % 60)
-      ctx.fillText(
-        `${mins}:${secs.toString().padStart(2, "0")}`,
-        x,
-        h - 6
-      )
+      ctx.fillText(`${mins}:${secs.toString().padStart(2, "0")}`, x, h - 6)
       ctx.strokeStyle = `color-mix(in oklch, ${fgDim}, transparent 85%)`
       ctx.lineWidth = 0.5
       ctx.beginPath()

@@ -16,7 +16,10 @@ interface SessionsTableProps {
   hasArousalData: boolean
 }
 
-export function SessionsTable({ sessions, hasArousalData }: SessionsTableProps) {
+export function SessionsTable({
+  sessions,
+  hasArousalData,
+}: SessionsTableProps) {
   const navigate = useNavigate()
 
   const sorted = [...sessions].sort((a, b) =>
@@ -34,7 +37,9 @@ export function SessionsTable({ sessions, hasArousalData }: SessionsTableProps) 
             <TableHead className="text-right">PLMs</TableHead>
             <TableHead className="text-right">Series</TableHead>
             <TableHead className="text-right">Body</TableHead>
-            {hasArousalData && <TableHead className="text-right">Arousal</TableHead>}
+            {hasArousalData && (
+              <TableHead className="text-right">Arousal</TableHead>
+            )}
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -53,17 +58,17 @@ export function SessionsTable({ sessions, hasArousalData }: SessionsTableProps) 
               <TableCell>
                 <PlmiBadge value={s.plmi} showLabel />
               </TableCell>
-              <TableCell className="tabular-nums text-right">
+              <TableCell className="text-right tabular-nums">
                 {s.plm_count}
               </TableCell>
-              <TableCell className="tabular-nums text-right">
+              <TableCell className="text-right tabular-nums">
                 {s.series_count}
               </TableCell>
-              <TableCell className="tabular-nums text-right">
+              <TableCell className="text-right tabular-nums">
                 {s.body_movements}
               </TableCell>
               {hasArousalData && (
-                <TableCell className="tabular-nums text-right">
+                <TableCell className="text-right tabular-nums">
                   {s.arousal_pct != null ? `${s.arousal_pct}%` : "-"}
                 </TableCell>
               )}

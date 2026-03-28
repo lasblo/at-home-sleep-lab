@@ -32,11 +32,22 @@ function median(arr: number[]): number {
   return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2
 }
 
-function trend7d(sessions: DashboardSession[], key: (s: DashboardSession) => number | null): number | null {
-  const sorted = [...sessions].sort((a, b) => a.night_date.localeCompare(b.night_date))
+function trend7d(
+  sessions: DashboardSession[],
+  key: (s: DashboardSession) => number | null
+): number | null {
+  const sorted = [...sessions].sort((a, b) =>
+    a.night_date.localeCompare(b.night_date)
+  )
   if (sorted.length < 4) return null
-  const recent = sorted.slice(-7).map(key).filter((v): v is number => v != null)
-  const prior = sorted.slice(0, -7).map(key).filter((v): v is number => v != null)
+  const recent = sorted
+    .slice(-7)
+    .map(key)
+    .filter((v): v is number => v != null)
+  const prior = sorted
+    .slice(0, -7)
+    .map(key)
+    .filter((v): v is number => v != null)
   if (recent.length === 0 || prior.length === 0) return null
   return avg(recent) - avg(prior)
 }
@@ -58,7 +69,9 @@ export function useDashboardSummary() {
   })
 }
 
-export function useDashboardStats(sessions: DashboardSession[]): DashboardStats | null {
+export function useDashboardStats(
+  sessions: DashboardSession[]
+): DashboardStats | null {
   return useMemo(() => {
     if (sessions.length === 0) return null
 
@@ -76,7 +89,12 @@ export function useDashboardStats(sessions: DashboardSession[]): DashboardStats 
 
     const arousalSessions = sessions.filter((s) => s.arousal_pct != null)
 
-    const dist: Record<PlmiSeverity, number> = { normal: 0, mild: 0, moderate: 0, severe: 0 }
+    const dist: Record<PlmiSeverity, number> = {
+      normal: 0,
+      mild: 0,
+      moderate: 0,
+      severe: 0,
+    }
     for (const s of sessions) {
       dist[plmiSeverity(s.plmi)]++
     }
@@ -94,12 +112,14 @@ export function useDashboardStats(sessions: DashboardSession[]): DashboardStats 
       avgWaketime: "",
       severityDistribution: dist,
       hasArousalData: arousalSessions.length > 0,
-      meanArousalPct: arousalSessions.length > 0
-        ? avg(arousalSessions.map((s) => s.arousal_pct!))
-        : null,
-      meanPLMAI: arousalSessions.length > 0
-        ? avg(arousalSessions.map((s) => s.plmai!))
-        : null,
+      meanArousalPct:
+        arousalSessions.length > 0
+          ? avg(arousalSessions.map((s) => s.arousal_pct!))
+          : null,
+      meanPLMAI:
+        arousalSessions.length > 0
+          ? avg(arousalSessions.map((s) => s.plmai!))
+          : null,
       arousalTrend: trend7d(sessions, (s) => s.arousal_pct),
     }
   }, [sessions])

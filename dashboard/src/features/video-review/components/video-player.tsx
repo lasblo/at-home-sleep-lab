@@ -11,7 +11,11 @@ interface VideoPlayerProps {
   onTimeUpdate: (time: number) => void
 }
 
-export function VideoPlayer({ filename, seekTo, onTimeUpdate }: VideoPlayerProps) {
+export function VideoPlayer({
+  filename,
+  seekTo,
+  onTimeUpdate,
+}: VideoPlayerProps) {
   const videoRef = useRef<HTMLVideoElement>(null)
   const [playing, setPlaying] = useState(false)
   const [speed, setSpeed] = useState(1)
@@ -56,11 +60,15 @@ export function VideoPlayer({ filename, seekTo, onTimeUpdate }: VideoPlayerProps
         v.currentTime = Math.min(v.duration || 0, v.currentTime + 5)
       } else if (e.code === "ArrowUp") {
         e.preventDefault()
-        const idx = PLAYBACK_SPEEDS.indexOf(speed as typeof PLAYBACK_SPEEDS[number])
+        const idx = PLAYBACK_SPEEDS.indexOf(
+          speed as (typeof PLAYBACK_SPEEDS)[number]
+        )
         if (idx < PLAYBACK_SPEEDS.length - 1) setSpeed(PLAYBACK_SPEEDS[idx + 1])
       } else if (e.code === "ArrowDown") {
         e.preventDefault()
-        const idx = PLAYBACK_SPEEDS.indexOf(speed as typeof PLAYBACK_SPEEDS[number])
+        const idx = PLAYBACK_SPEEDS.indexOf(
+          speed as (typeof PLAYBACK_SPEEDS)[number]
+        )
         if (idx > 0) setSpeed(PLAYBACK_SPEEDS[idx - 1])
       }
     }
@@ -91,10 +99,15 @@ export function VideoPlayer({ filename, seekTo, onTimeUpdate }: VideoPlayerProps
         onLoadedMetadata={() => setDuration(videoRef.current?.duration ?? 0)}
       />
       <div className="flex items-center gap-3 border-t bg-card px-4 py-2">
-        <Button variant="ghost" size="icon" onClick={togglePlay} className="size-8">
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={togglePlay}
+          className="size-8"
+        >
           {playing ? <Pause /> : <Play />}
         </Button>
-        <span className="text-xs tabular-nums text-muted-foreground">
+        <span className="text-xs text-muted-foreground tabular-nums">
           {formatTime(currentTime)} / {formatTime(duration)}
         </span>
         <div className="ml-auto">
@@ -105,7 +118,11 @@ export function VideoPlayer({ filename, seekTo, onTimeUpdate }: VideoPlayerProps
             size="sm"
           >
             {PLAYBACK_SPEEDS.map((s) => (
-              <ToggleGroupItem key={s} value={s.toString()} className="text-xs tabular-nums">
+              <ToggleGroupItem
+                key={s}
+                value={s.toString()}
+                className="text-xs tabular-nums"
+              >
                 {s}x
               </ToggleGroupItem>
             ))}

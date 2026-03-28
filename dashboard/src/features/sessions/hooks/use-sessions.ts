@@ -33,7 +33,10 @@ export function useSessionDetail(sessionId: string | undefined) {
     queryKey: ["sessions", sessionId],
     queryFn: async () => {
       const res = await fetch(`/api/sessions/${sessionId}`)
-      if (!res.ok) throw new Error(res.status === 404 ? "not_found" : "Failed to fetch session detail")
+      if (!res.ok)
+        throw new Error(
+          res.status === 404 ? "not_found" : "Failed to fetch session detail"
+        )
       return res.json()
     },
     enabled: !!sessionId,

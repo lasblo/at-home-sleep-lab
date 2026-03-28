@@ -45,7 +45,9 @@ export function BluetoothCard() {
     },
     onSuccess: (data) => {
       if (data.ok) {
-        toast.success(`BLE service reachable (${data.devices.length} HR device${data.devices.length !== 1 ? "s" : ""} found)`)
+        toast.success(
+          `BLE service reachable (${data.devices.length} HR device${data.devices.length !== 1 ? "s" : ""} found)`
+        )
       } else {
         toast.error(data.error || "BLE service unreachable")
       }
@@ -87,7 +89,10 @@ export function BluetoothCard() {
               <div className="flex flex-col gap-0.5">
                 <span className="font-mono text-sm">{configuredUrl}</span>
               </div>
-              <Badge variant="secondary" className="bg-severity-normal/15 text-severity-normal text-[10px]">
+              <Badge
+                variant="secondary"
+                className="bg-severity-normal/15 text-[10px] text-severity-normal"
+              >
                 Configured
               </Badge>
             </div>
@@ -102,7 +107,11 @@ export function BluetoothCard() {
               {testBle.isPending ? <Spinner data-icon="inline-start" /> : null}
               Test Connection
             </Button>
-            <Button variant="outline" size="sm" onClick={() => setEditing(true)}>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setEditing(true)}
+            >
               Change URL
             </Button>
           </CardFooter>
@@ -119,7 +128,8 @@ export function BluetoothCard() {
                 placeholder="http://host.docker.internal:8001"
               />
               <p className="text-xs text-muted-foreground">
-                Default works for Docker Desktop on macOS. Change if running differently.
+                Default works for Docker Desktop on macOS. Change if running
+                differently.
               </p>
             </div>
             <div className="flex items-center gap-3">
@@ -129,7 +139,9 @@ export function BluetoothCard() {
                 onClick={() => testBle.mutate()}
                 disabled={!bleUrl || testBle.isPending}
               >
-                {testBle.isPending ? <Spinner data-icon="inline-start" /> : null}
+                {testBle.isPending ? (
+                  <Spinner data-icon="inline-start" />
+                ) : null}
                 Test Connection
               </Button>
             </div>

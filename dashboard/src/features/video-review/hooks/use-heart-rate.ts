@@ -1,7 +1,10 @@
 import { useQuery } from "@tanstack/react-query"
 import type { HRResponse } from "@/shared/types/api"
 
-export function useHeartRate(start: string | undefined, end: string | undefined) {
+export function useHeartRate(
+  start: string | undefined,
+  end: string | undefined
+) {
   return useQuery<HRResponse>({
     queryKey: ["hr", "range", start, end],
     queryFn: async () => {

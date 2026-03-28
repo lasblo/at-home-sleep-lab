@@ -29,7 +29,11 @@ const severityValueClass: Record<string, string> = {
   severe: "text-severity-severe",
 }
 
-function ActiveSessionBanner({ session }: { session: { id: string; started_at: string } }) {
+function ActiveSessionBanner({
+  session,
+}: {
+  session: { id: string; started_at: string }
+}) {
   const navigate = useNavigate()
   return (
     <div className="flex items-center gap-3 rounded-lg border border-chart-1/30 bg-chart-1/5 p-4">
@@ -37,7 +41,9 @@ function ActiveSessionBanner({ session }: { session: { id: string; started_at: s
       <span className="font-medium">Sleep session in progress</span>
       <Badge variant="outline" className="tabular-nums">
         {new Date(session.started_at).toLocaleTimeString("en-US", {
-          hour: "2-digit", minute: "2-digit", hour12: false,
+          hour: "2-digit",
+          minute: "2-digit",
+          hour12: false,
         })}
       </Badge>
       <Button
@@ -122,7 +128,9 @@ export default function DashboardPage() {
           value={stats.meanPLMI}
           valueClassName={severityValueClass[plmiSeverity(stats.meanPLMI)]}
           description={`${plmiSeverity(stats.meanPLMI).charAt(0).toUpperCase()}${plmiSeverity(stats.meanPLMI).slice(1)}`}
-          trend={stats.plmiTrend != null ? { value: stats.plmiTrend } : undefined}
+          trend={
+            stats.plmiTrend != null ? { value: stats.plmiTrend } : undefined
+          }
         />
         <StatCard
           label="Median PLMI"
@@ -133,18 +141,21 @@ export default function DashboardPage() {
         <StatCard
           label="Avg Sleep"
           value={`${stats.avgHours.toFixed(1)}h`}
-          description={stats.avgBedtime ? `bedtime ~${stats.avgBedtime}` : undefined}
+          description={
+            stats.avgBedtime ? `bedtime ~${stats.avgBedtime}` : undefined
+          }
         />
-        <StatCard
-          label="Nights Analyzed"
-          value={stats.nightCount.toString()}
-        />
+        <StatCard label="Nights Analyzed" value={stats.nightCount.toString()} />
         {stats.hasArousalData && stats.meanArousalPct != null && (
           <StatCard
             label="Arousal Rate"
             value={`${stats.meanArousalPct.toFixed(0)}%`}
             description="PLMs causing arousals"
-            trend={stats.arousalTrend != null ? { value: stats.arousalTrend } : undefined}
+            trend={
+              stats.arousalTrend != null
+                ? { value: stats.arousalTrend }
+                : undefined
+            }
           />
         )}
         {stats.hasArousalData && stats.meanPLMAI != null && (
@@ -175,7 +186,9 @@ export default function DashboardPage() {
       {/* Sessions table */}
       <div className="flex flex-col gap-2">
         <div className="flex items-center justify-between">
-          <h2 className="text-sm font-medium text-muted-foreground">All Sessions</h2>
+          <h2 className="text-sm font-medium text-muted-foreground">
+            All Sessions
+          </h2>
           <Button
             variant="ghost"
             size="sm"

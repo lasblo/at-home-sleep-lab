@@ -66,8 +66,13 @@ export function UniFiCard() {
       return res.json()
     },
     onSuccess: (data) => {
-      if (data.ok) { setTestResult("ok"); toast.success(`Connected to ${data.name}`) }
-      else { setTestResult("fail"); toast.error(data.error || "Connection failed") }
+      if (data.ok) {
+        setTestResult("ok")
+        toast.success(`Connected to ${data.name}`)
+      } else {
+        setTestResult("fail")
+        toast.error(data.error || "Connection failed")
+      }
     },
   })
 
@@ -83,7 +88,8 @@ export function UniFiCard() {
     onSuccess: (data) => {
       if (data.cameras) {
         setCameras(data.cameras)
-        if (data.cameras.length > 0 && !selectedCamera) setSelectedCamera(data.cameras[0].id)
+        if (data.cameras.length > 0 && !selectedCamera)
+          setSelectedCamera(data.cameras[0].id)
       }
     },
   })
@@ -94,7 +100,9 @@ export function UniFiCard() {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          host, username: user, password: pass,
+          host,
+          username: user,
+          password: pass,
           camera_id: selectedCamera,
           camera_name: cameras.find((c) => c.id === selectedCamera)?.name || "",
         }),
@@ -125,18 +133,35 @@ export function UniFiCard() {
             <div className="flex items-center gap-3">
               <CheckCircle2 className="size-5 text-severity-normal" />
               <div className="flex flex-col gap-0.5">
-                <span className="text-sm font-medium">{unifiSettings.host}</span>
-                <span className="text-xs text-muted-foreground">{unifiSettings.username}</span>
+                <span className="text-sm font-medium">
+                  {unifiSettings.host}
+                </span>
+                <span className="text-xs text-muted-foreground">
+                  {unifiSettings.username}
+                </span>
               </div>
             </div>
             <div className="flex items-center gap-2">
               <Video className="size-4 text-muted-foreground" />
-              <span className="text-sm">{unifiSettings.camera_name || unifiSettings.camera_id}</span>
-              <Badge variant="secondary" className="bg-severity-normal/15 text-severity-normal text-[10px]">Configured</Badge>
+              <span className="text-sm">
+                {unifiSettings.camera_name || unifiSettings.camera_id}
+              </span>
+              <Badge
+                variant="secondary"
+                className="bg-severity-normal/15 text-[10px] text-severity-normal"
+              >
+                Configured
+              </Badge>
             </div>
           </CardContent>
           <CardFooter>
-            <Button variant="outline" size="sm" onClick={() => setEditing(true)}>Reconfigure</Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setEditing(true)}
+            >
+              Reconfigure
+            </Button>
           </CardFooter>
         </>
       ) : (
@@ -144,32 +169,62 @@ export function UniFiCard() {
           <CardContent className="flex flex-col gap-4">
             <div className="flex flex-col gap-2">
               <Label htmlFor="unifi-host">NVR Address</Label>
-              <Input id="unifi-host" placeholder="192.168.1.1" value={host}
-                onChange={(e) => { setHost(e.target.value.replace(/^https?:\/\//, "")); setTestResult(null) }} />
+              <Input
+                id="unifi-host"
+                placeholder="192.168.1.1"
+                value={host}
+                onChange={(e) => {
+                  setHost(e.target.value.replace(/^https?:\/\//, ""))
+                  setTestResult(null)
+                }}
+              />
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div className="flex flex-col gap-2">
                 <Label htmlFor="unifi-user">Username</Label>
-                <Input id="unifi-user" placeholder="admin" value={user} onChange={(e) => setUser(e.target.value)} />
+                <Input
+                  id="unifi-user"
+                  placeholder="admin"
+                  value={user}
+                  onChange={(e) => setUser(e.target.value)}
+                />
               </div>
               <div className="flex flex-col gap-2">
                 <Label htmlFor="unifi-pass">Password</Label>
-                <Input id="unifi-pass" type="password" value={pass} onChange={(e) => setPass(e.target.value)} />
+                <Input
+                  id="unifi-pass"
+                  type="password"
+                  value={pass}
+                  onChange={(e) => setPass(e.target.value)}
+                />
               </div>
             </div>
             <div className="flex items-center gap-3">
-              <Button variant="outline" size="sm" onClick={() => testConnection.mutate()}
-                disabled={!host || !user || !pass || testConnection.isPending}>
-                {testConnection.isPending ? <Spinner data-icon="inline-start" /> : null}
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => testConnection.mutate()}
+                disabled={!host || !user || !pass || testConnection.isPending}
+              >
+                {testConnection.isPending ? (
+                  <Spinner data-icon="inline-start" />
+                ) : null}
                 Test Connection
               </Button>
               {testResult === "ok" && (
-                <Badge variant="secondary" className="bg-severity-normal/15 text-severity-normal">
-                  <CheckCircle2 className="mr-0.5" />Connected
+                <Badge
+                  variant="secondary"
+                  className="bg-severity-normal/15 text-severity-normal"
+                >
+                  <CheckCircle2 className="mr-0.5" />
+                  Connected
                 </Badge>
               )}
               {testResult === "fail" && (
-                <Badge variant="destructive"><XCircle className="mr-0.5" />Failed</Badge>
+                <Badge variant="destructive">
+                  <XCircle className="mr-0.5" />
+                  Failed
+                </Badge>
               )}
             </div>
             {testResult === "ok" && (
@@ -178,15 +233,28 @@ export function UniFiCard() {
                 <div className="flex flex-col gap-2">
                   <Label>Camera</Label>
                   {cameras.length > 0 ? (
-                    <Select value={selectedCamera} onValueChange={setSelectedCamera}>
-                      <SelectTrigger><SelectValue placeholder="Select a camera" /></SelectTrigger>
+                    <Select
+                      value={selectedCamera}
+                      onValueChange={setSelectedCamera}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select a camera" />
+                      </SelectTrigger>
                       <SelectContent>
                         <SelectGroup>
                           {cameras.map((c) => (
                             <SelectItem key={c.id} value={c.id}>
                               <div className="flex items-center gap-2">
-                                <Video className="size-3.5" />{c.name}
-                                {!c.is_connected && <Badge variant="outline" className="text-[10px]">Offline</Badge>}
+                                <Video className="size-3.5" />
+                                {c.name}
+                                {!c.is_connected && (
+                                  <Badge
+                                    variant="outline"
+                                    className="text-[10px]"
+                                  >
+                                    Offline
+                                  </Badge>
+                                )}
                               </div>
                             </SelectItem>
                           ))}
@@ -194,8 +262,15 @@ export function UniFiCard() {
                       </SelectContent>
                     </Select>
                   ) : (
-                    <Button variant="outline" size="sm" onClick={() => fetchCameras.mutate()} disabled={fetchCameras.isPending}>
-                      {fetchCameras.isPending ? <Spinner data-icon="inline-start" /> : null}
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => fetchCameras.mutate()}
+                      disabled={fetchCameras.isPending}
+                    >
+                      {fetchCameras.isPending ? (
+                        <Spinner data-icon="inline-start" />
+                      ) : null}
                       Load Cameras
                     </Button>
                   )}
@@ -204,10 +279,17 @@ export function UniFiCard() {
             )}
           </CardContent>
           <CardFooter className="gap-2">
-            <Button onClick={() => save.mutate()} disabled={!host || !selectedCamera || save.isPending}>
+            <Button
+              onClick={() => save.mutate()}
+              disabled={!host || !selectedCamera || save.isPending}
+            >
               {save.isPending ? <Spinner data-icon="inline-start" /> : null}Save
             </Button>
-            {isConfigured && <Button variant="outline" onClick={() => setEditing(false)}>Cancel</Button>}
+            {isConfigured && (
+              <Button variant="outline" onClick={() => setEditing(false)}>
+                Cancel
+              </Button>
+            )}
           </CardFooter>
         </>
       )}

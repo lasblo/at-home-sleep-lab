@@ -30,12 +30,54 @@ export const router = createBrowserRouter([
     path: "/",
     element: <AppLayout />,
     children: [
-      { index: true, element: <Lazy><DashboardPage /></Lazy> },
-      { path: "sessions", element: <Lazy><SessionsPage /></Lazy> },
-      { path: "sessions/:sessionId", element: <Lazy><SessionDetailPage /></Lazy> },
-      { path: "videos/:videoId", element: <Lazy><VideoReviewPage /></Lazy> },
-      { path: "heart-rate", element: <Lazy><HeartRatePage /></Lazy> },
-      { path: "settings", element: <Lazy><SettingsPage /></Lazy> },
+      {
+        index: true,
+        element: (
+          <Lazy>
+            <DashboardPage />
+          </Lazy>
+        ),
+      },
+      {
+        path: "sessions",
+        element: (
+          <Lazy>
+            <SessionsPage />
+          </Lazy>
+        ),
+      },
+      {
+        path: "sessions/:sessionId",
+        element: (
+          <Lazy>
+            <SessionDetailPage />
+          </Lazy>
+        ),
+      },
+      {
+        path: "videos/:videoId",
+        element: (
+          <Lazy>
+            <VideoReviewPage />
+          </Lazy>
+        ),
+      },
+      {
+        path: "heart-rate",
+        element: (
+          <Lazy>
+            <HeartRatePage />
+          </Lazy>
+        ),
+      },
+      {
+        path: "settings",
+        element: (
+          <Lazy>
+            <SettingsPage />
+          </Lazy>
+        ),
+      },
       { path: "*", element: <Navigate to="/" replace /> },
     ],
   },

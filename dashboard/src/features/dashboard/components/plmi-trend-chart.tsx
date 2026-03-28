@@ -66,10 +66,30 @@ export function PlmiTrendChart({ sessions }: PlmiTrendChartProps) {
             }}
           >
             {/* Severity bands */}
-            <ReferenceArea y1={0} y2={5} fill="var(--color-severity-normal)" fillOpacity={0.06} />
-            <ReferenceArea y1={5} y2={15} fill="var(--color-severity-mild)" fillOpacity={0.06} />
-            <ReferenceArea y1={15} y2={25} fill="var(--color-severity-moderate)" fillOpacity={0.06} />
-            <ReferenceArea y1={25} y2={yMax} fill="var(--color-severity-severe)" fillOpacity={0.06} />
+            <ReferenceArea
+              y1={0}
+              y2={5}
+              fill="var(--color-severity-normal)"
+              fillOpacity={0.06}
+            />
+            <ReferenceArea
+              y1={5}
+              y2={15}
+              fill="var(--color-severity-mild)"
+              fillOpacity={0.06}
+            />
+            <ReferenceArea
+              y1={15}
+              y2={25}
+              fill="var(--color-severity-moderate)"
+              fillOpacity={0.06}
+            />
+            <ReferenceArea
+              y1={25}
+              y2={yMax}
+              fill="var(--color-severity-severe)"
+              fillOpacity={0.06}
+            />
 
             <CartesianGrid vertical={false} />
             <XAxis

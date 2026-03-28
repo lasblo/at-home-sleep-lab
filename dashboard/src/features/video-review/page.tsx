@@ -14,7 +14,13 @@ import { formatClockTime } from "@/shared/lib/utils"
 
 export default function VideoReviewPage() {
   const { videoId } = useParams<{ videoId: string }>()
-  const { data: results, isLoading, isError, error, refetch } = useVideoResults(videoId)
+  const {
+    data: results,
+    isLoading,
+    isError,
+    error,
+    refetch,
+  } = useVideoResults(videoId)
 
   const { data: hrResponse } = useHeartRate(
     results?.video?.start_local,

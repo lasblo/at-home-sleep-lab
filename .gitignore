@@ -8,3 +8,4 @@ __pycache__/
 /hr_input/hr_status.json
 .DS_Store
 swift-motion/
+.playwright-mcp/

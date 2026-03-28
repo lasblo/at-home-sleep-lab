@@ -24,9 +24,7 @@ import { ThemeToggle } from "@/shared/components/theme-toggle"
 const NAV_ITEMS = [
   {
     group: "Overview",
-    items: [
-      { label: "Dashboard", icon: LayoutDashboard, href: "/" },
-    ],
+    items: [{ label: "Dashboard", icon: LayoutDashboard, href: "/" }],
   },
   {
     group: "Analysis",
@@ -37,9 +35,7 @@ const NAV_ITEMS = [
   },
   {
     group: "System",
-    items: [
-      { label: "Settings", icon: Settings, href: "/settings" },
-    ],
+    items: [{ label: "Settings", icon: Settings, href: "/settings" }],
   },
 ]
 

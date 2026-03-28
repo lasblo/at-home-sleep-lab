@@ -25,7 +25,10 @@ const chartConfig = {
   count: { label: "Nights" },
   normal: { label: "Normal (<5)", color: "var(--color-severity-normal)" },
   mild: { label: "Mild (5-15)", color: "var(--color-severity-mild)" },
-  moderate: { label: "Moderate (15-25)", color: "var(--color-severity-moderate)" },
+  moderate: {
+    label: "Moderate (15-25)",
+    color: "var(--color-severity-moderate)",
+  },
   severe: { label: "Severe (>25)", color: "var(--color-severity-severe)" },
 } satisfies ChartConfig
 
@@ -35,13 +38,15 @@ interface SeverityChartProps {
 }
 
 export function SeverityChart({ distribution, total }: SeverityChartProps) {
-  const data = (["normal", "mild", "moderate", "severe"] as PlmiSeverity[]).map((sev) => ({
-    severity: sev,
-    label: sev.charAt(0).toUpperCase() + sev.slice(1),
-    count: distribution[sev],
-    pct: total > 0 ? Math.round((distribution[sev] / total) * 100) : 0,
-    fill: SEVERITY_COLORS[sev],
-  }))
+  const data = (["normal", "mild", "moderate", "severe"] as PlmiSeverity[]).map(
+    (sev) => ({
+      severity: sev,
+      label: sev.charAt(0).toUpperCase() + sev.slice(1),
+      count: distribution[sev],
+      pct: total > 0 ? Math.round((distribution[sev] / total) * 100) : 0,
+      fill: SEVERITY_COLORS[sev],
+    })
+  )
 
   return (
     <Card>
