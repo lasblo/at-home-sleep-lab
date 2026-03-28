@@ -58,13 +58,15 @@ export function AppSidebar() {
               onClick={() => navigate("/")}
               className="cursor-pointer"
             >
-              <div className="flex items-center gap-2">
-                <div className="flex size-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
+              <div className="flex items-center gap-2.5">
+                <div className="flex size-8 items-center justify-center rounded-lg bg-gradient-to-br from-primary to-primary/70 text-primary-foreground shadow-sm">
                   <MoonIcon className="size-4" />
                 </div>
                 <div className="flex flex-col gap-0.5 leading-none">
-                  <span className="font-semibold">Sleep Lab</span>
-                  <span className="text-xs text-muted-foreground">
+                  <span className="font-heading text-sm font-bold tracking-tight">
+                    Sleep Lab
+                  </span>
+                  <span className="text-[11px] text-muted-foreground">
                     But at Home
                   </span>
                 </div>
