@@ -1,0 +1,24 @@
+{
+    "env": {
+        "CLAUDE_CODE_NEW_INIT": "1",
+        "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1"
+    },
+    "permissions": {
+        "allow": [
+            "mcp__Claude_Preview__preview_start"
+        ]
+    },
+    "hooks": {
+        "PostToolUse": [
+            {
+                "matcher": "Write|Edit",
+                "hooks": [
+                    {
+                        "type": "command",
+                        "command": "jq -r '.tool_response.filePath // .tool_input.file_path' | { read -r f; case \"$f\" in */dashboard/*) cd /Users/lasse/workspace/sleep_analysis/dashboard && npx prettier --write --ignore-unknown \"$f\" ;; */backend/*|*/ble_service.py) ruff format --config /Users/lasse/workspace/sleep_analysis/ruff.toml \"$f\" ;; esac; } 2>/dev/null || true"
+                    }
+                ]
+            }
+        ]
+    }
+}
