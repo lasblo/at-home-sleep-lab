@@ -86,6 +86,11 @@ async def list_sessions():
     return await db.list_sessions()
 
 
+@app.get("/api/dashboard/summary")
+async def dashboard_summary():
+    return await db.get_dashboard_summary()
+
+
 @app.get("/api/sessions/{session_id}")
 async def session_detail(session_id: str):
     detail = await db.get_session_detail(session_id)

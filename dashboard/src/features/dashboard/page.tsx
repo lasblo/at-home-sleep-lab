@@ -1,7 +1,13 @@
 import { useNavigate } from "react-router-dom"
-import { useSessions, useActiveSession } from "@/features/sessions/hooks/use-sessions"
+import { useActiveSession } from "@/features/sessions/hooks/use-sessions"
+import { useDashboardSummary, useDashboardStats } from "./hooks/use-dashboard"
+import { PlmiTrendChart } from "./components/plmi-trend-chart"
+import { SeverityChart } from "./components/severity-chart"
+import { AggregateHourlyChart } from "./components/aggregate-hourly"
+import { SessionsTable } from "./components/sessions-table"
 import { PageHeader } from "@/shared/components/page-header"
 import { StatCard } from "@/shared/components/stat-card"
+import { PlmiBadge } from "@/shared/components/plmi-badge"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -12,23 +18,28 @@ import {
   EmptyTitle,
   EmptyDescription,
 } from "@/components/ui/empty"
-import { Moon, ArrowRight, Settings, Heart } from "lucide-react"
+import { Moon, ArrowRight, Settings } from "lucide-react"
 import { ErrorState } from "@/shared/components/error-state"
-import { formatDate, formatDuration } from "@/shared/lib/utils"
+import { plmiSeverity } from "@/shared/lib/utils"
 
-function ActiveSessionBanner({ session, showTime }: { session: { id: string; started_at: string }; showTime?: boolean }) {
+const severityValueClass: Record<string, string> = {
+  normal: "text-severity-normal",
+  mild: "text-severity-mild",
+  moderate: "text-severity-moderate",
+  severe: "text-severity-severe",
+}
+
+function ActiveSessionBanner({ session }: { session: { id: string; started_at: string } }) {
   const navigate = useNavigate()
   return (
     <div className="flex items-center gap-3 rounded-lg border border-chart-1/30 bg-chart-1/5 p-4">
       <div className="size-3 animate-pulse rounded-full bg-chart-1" />
       <span className="font-medium">Sleep session in progress</span>
-      {showTime && (
-        <Badge variant="outline" className="tabular-nums">
-          {new Date(session.started_at).toLocaleTimeString("en-US", {
-            hour: "2-digit", minute: "2-digit", hour12: false,
-          })}
-        </Badge>
-      )}
+      <Badge variant="outline" className="tabular-nums">
+        {new Date(session.started_at).toLocaleTimeString("en-US", {
+          hour: "2-digit", minute: "2-digit", hour12: false,
+        })}
+      </Badge>
       <Button
         variant="outline"
         size="sm"
@@ -44,8 +55,9 @@ function ActiveSessionBanner({ session, showTime }: { session: { id: string; sta
 
 export default function DashboardPage() {
   const navigate = useNavigate()
-  const { data: sessions, isLoading, isError, refetch } = useSessions()
+  const { data: summary, isLoading, isError, refetch } = useDashboardSummary()
   const { data: active } = useActiveSession()
+  const stats = useDashboardStats(summary?.sessions ?? [])
 
   if (isError) {
     return <ErrorState title="Failed to load dashboard" retry={refetch} />
@@ -55,22 +67,25 @@ export default function DashboardPage() {
     return (
       <div className="flex flex-col gap-6 p-6">
         <Skeleton className="h-8 w-48" />
-        <Skeleton className="h-[200px]" />
+        <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <Skeleton key={i} className="h-[100px]" />
+          ))}
+        </div>
+        <Skeleton className="h-[300px]" />
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+          <Skeleton className="h-[200px]" />
+          <Skeleton className="h-[200px]" />
+        </div>
       </div>
     )
   }
 
-  const analyzed = (sessions ?? []).filter((s) => s.status === "analyzed")
-  const hasHR = analyzed.some((s) => s.hr_enabled)
-  const hasSessions = sessions && sessions.length > 0
-
-  if (!hasSessions) {
+  if (!stats) {
     return (
       <div className="flex flex-col gap-6 p-6">
         <PageHeader title="Dashboard" description="Sleep health overview" />
-
         {active && <ActiveSessionBanner session={active} />}
-
         <Empty className="min-h-[400px]">
           <EmptyMedia variant="icon">
             <Moon />
@@ -94,78 +109,86 @@ export default function DashboardPage() {
     )
   }
 
-  const totalHours = analyzed.reduce((sum, s) => sum + (s.total_hours ?? 0), 0)
-
   return (
     <div className="flex flex-col gap-6 p-6">
       <PageHeader title="Dashboard" description="Sleep health overview" />
 
-      {active && <ActiveSessionBanner session={active} showTime />}
+      {active && <ActiveSessionBanner session={active} />}
 
-      <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+      {/* Stat cards */}
+      <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-6">
         <StatCard
-          label="Total Sessions"
-          value={sessions!.length.toString()}
-          description={`${analyzed.length} analyzed`}
+          label="Mean PLMI"
+          value={stats.meanPLMI}
+          valueClassName={severityValueClass[plmiSeverity(stats.meanPLMI)]}
+          description={`${plmiSeverity(stats.meanPLMI).charAt(0).toUpperCase()}${plmiSeverity(stats.meanPLMI).slice(1)}`}
+          trend={stats.plmiTrend != null ? { value: stats.plmiTrend } : undefined}
         />
         <StatCard
-          label="Total Hours"
-          value={`${totalHours.toFixed(0)}h`}
-          description={analyzed.length > 0 ? `avg ${formatDuration(totalHours / analyzed.length)}` : ""}
+          label="Median PLMI"
+          value={stats.medianPLMI}
+          valueClassName={severityValueClass[plmiSeverity(stats.medianPLMI)]}
+          description={`Range: ${stats.minPLMI.toFixed(0)}–${stats.maxPLMI.toFixed(0)}`}
         />
-        {hasHR && (
+        <StatCard
+          label="Avg Sleep"
+          value={`${stats.avgHours.toFixed(1)}h`}
+          description={stats.avgBedtime ? `bedtime ~${stats.avgBedtime}` : undefined}
+        />
+        <StatCard
+          label="Nights Analyzed"
+          value={stats.nightCount.toString()}
+        />
+        {stats.hasArousalData && stats.meanArousalPct != null && (
           <StatCard
-            label="HR Sessions"
-            value={analyzed.filter((s) => s.hr_enabled).length.toString()}
-            description="with cardiac data"
+            label="Arousal Rate"
+            value={`${stats.meanArousalPct.toFixed(0)}%`}
+            description="PLMs causing arousals"
+            trend={stats.arousalTrend != null ? { value: stats.arousalTrend } : undefined}
+          />
+        )}
+        {stats.hasArousalData && stats.meanPLMAI != null && (
+          <StatCard
+            label="Mean PLMAI"
+            value={stats.meanPLMAI}
+            valueClassName={severityValueClass[plmiSeverity(stats.meanPLMAI)]}
+            description="PLM Arousal Index"
           />
         )}
       </div>
 
-      {/* Recent sessions */}
-      <div className="flex flex-col gap-2">
-        <h2 className="text-sm font-medium text-muted-foreground">Recent Sessions</h2>
-        {sessions!.slice(0, 5).map((s) => (
-          <button
-            key={s.id}
-            onClick={() => navigate(`/sessions/${s.id}`)}
-            className="flex items-center justify-between rounded-md border px-4 py-3 text-left transition-colors hover:bg-accent/50"
-          >
-            <div className="flex items-center gap-3">
-              <span className="font-medium">{formatDate(s.night_date)}</span>
-              {s.total_hours != null && (
-                <span className="text-sm text-muted-foreground tabular-nums">
-                  {formatDuration(s.total_hours)}
-                </span>
-              )}
-            </div>
-            <Badge
-              variant="secondary"
-              className={
-                s.status === "analyzed"
-                  ? "bg-severity-normal/15 text-severity-normal text-[10px]"
-                  : s.status === "recording"
-                    ? "text-[10px]"
-                    : "text-[10px]"
-              }
-            >
-              {s.status === "analyzed" ? "Analyzed" : s.status === "recording" ? "Recording" : s.status}
-            </Badge>
-          </button>
-        ))}
+      {/* PLMI trend — primary chart */}
+      <PlmiTrendChart sessions={stats.sessions} />
+
+      {/* Severity distribution + hourly pattern */}
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+        <SeverityChart
+          distribution={stats.severityDistribution}
+          total={stats.nightCount}
+        />
+        <AggregateHourlyChart
+          data={summary?.aggregate_hourly ?? []}
+          nightCount={stats.nightCount}
+        />
       </div>
 
-      <div className="flex flex-wrap gap-3">
-        <Button variant="outline" onClick={() => navigate("/sessions")}>
-          View all sessions
-          <ArrowRight data-icon="inline-end" />
-        </Button>
-        {hasHR && (
-          <Button variant="outline" onClick={() => navigate("/heart-rate")}>
-            <Heart data-icon="inline-start" />
-            Heart rate analysis
+      {/* Sessions table */}
+      <div className="flex flex-col gap-2">
+        <div className="flex items-center justify-between">
+          <h2 className="text-sm font-medium text-muted-foreground">All Sessions</h2>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => navigate("/sessions")}
+          >
+            View details
+            <ArrowRight data-icon="inline-end" />
           </Button>
-        )}
+        </div>
+        <SessionsTable
+          sessions={stats.sessions}
+          hasArousalData={stats.hasArousalData}
+        />
       </div>
     </div>
   )

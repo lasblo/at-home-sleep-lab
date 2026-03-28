@@ -144,6 +144,34 @@ export interface SessionDetail extends Session {
   arousal_summary?: ArousalSummary
 }
 
+export interface DashboardSession {
+  session_id: string
+  night_date: string
+  total_hours: number
+  plmi: number
+  plm_count: number
+  series_count: number
+  body_movements: number
+  recording_hours: number
+  hr_enabled: boolean
+  started_at: string | null
+  arousal_pct: number | null
+  plmai: number | null
+}
+
+export interface AggregateHourly {
+  hour: number
+  label: string
+  avg_plm: number
+  avg_body: number
+  night_count: number
+}
+
+export interface DashboardSummary {
+  sessions: DashboardSession[]
+  aggregate_hourly: AggregateHourly[]
+}
+
 export interface UniFiCamera {
   id: string
   name: string

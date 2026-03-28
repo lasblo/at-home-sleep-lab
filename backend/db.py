@@ -462,6 +462,116 @@ def _session_to_dict(row) -> dict:
     }
 
 
+# ── Dashboard ───────────────────────────────────────────────────────
+
+async def get_dashboard_summary() -> dict:
+    """Aggregate stats across all analyzed sessions using SQL — no event loading."""
+    pool = await get_pool()
+
+    # Per-session aggregates
+    rows = await pool.fetch("""
+        SELECT
+            s.id as session_id,
+            s.night_date,
+            s.total_hours,
+            s.hr_enabled,
+            s.started_at,
+            COUNT(e.*) FILTER (WHERE e.is_plm) as plm_count,
+            COUNT(e.*) FILTER (WHERE e.movement_type = 'body') as body_count,
+            COUNT(e.*) as total_movements,
+            COUNT(DISTINCT e.series_id) FILTER (WHERE e.series_id IS NOT NULL) as series_count
+        FROM sessions s
+        JOIN videos v ON v.session_id = s.id AND v.processed = true
+        JOIN events e ON e.video_id = v.id
+        WHERE s.status = 'analyzed'
+        GROUP BY s.id
+        ORDER BY s.night_date
+    """)
+
+    sessions = []
+    for r in rows:
+        hours = r["total_hours"] or 0
+        plm_count = r["plm_count"]
+        plmi = round(plm_count / hours, 1) if hours > 0 else 0
+        sessions.append({
+            "session_id": r["session_id"],
+            "night_date": r["night_date"].isoformat(),
+            "total_hours": round(hours, 2),
+            "plmi": plmi,
+            "plm_count": plm_count,
+            "series_count": r["series_count"],
+            "body_movements": r["body_count"],
+            "recording_hours": round(hours, 2),
+            "hr_enabled": r["hr_enabled"],
+            "started_at": r["started_at"].isoformat() if r["started_at"] else None,
+            "arousal_pct": None,
+            "plmai": None,
+        })
+
+    # Arousal stats for HR-enabled sessions
+    session_ids_with_hr = [s["session_id"] for s in sessions if s["hr_enabled"]]
+    if session_ids_with_hr:
+        arousal_rows = await pool.fetch("""
+            SELECT
+                v.session_id,
+                COUNT(e.*) FILTER (WHERE e.is_plm) as plm_count,
+                COUNT(e.*) FILTER (
+                    WHERE e.is_plm AND e.arousal IS NOT NULL
+                    AND (e.arousal::jsonb->>'has_arousal')::boolean = true
+                ) as arousal_count
+            FROM events e
+            JOIN videos v ON e.video_id = v.id AND v.processed = true
+            WHERE v.session_id = ANY($1)
+            GROUP BY v.session_id
+        """, session_ids_with_hr)
+
+        arousal_map = {}
+        for ar in arousal_rows:
+            plm = ar["plm_count"]
+            ac = ar["arousal_count"]
+            arousal_map[ar["session_id"]] = {
+                "arousal_pct": round(ac / plm * 100, 1) if plm > 0 else 0,
+                "arousal_count": ac,
+                "plm_count": plm,
+            }
+
+        for s in sessions:
+            if s["session_id"] in arousal_map:
+                am = arousal_map[s["session_id"]]
+                s["arousal_pct"] = am["arousal_pct"]
+                hours = s["total_hours"] or 0
+                s["plmai"] = round(am["arousal_count"] / hours, 1) if hours > 0 else 0
+
+    # Aggregate hourly distribution
+    # timestamp_sec is per-video (0-3600 for 1h videos), so add video offset from session start
+    hourly_rows = await pool.fetch("""
+        SELECT
+            floor((extract(epoch from v.start_local - s.started_at) + e.timestamp_sec) / 3600)::int as hour_offset,
+            COUNT(e.*) FILTER (WHERE e.is_plm) as plm_count,
+            COUNT(e.*) FILTER (WHERE e.movement_type = 'body') as body_count,
+            COUNT(DISTINCT v.session_id) as night_count
+        FROM events e
+        JOIN videos v ON e.video_id = v.id AND v.processed = true
+        JOIN sessions s ON v.session_id = s.id AND s.status = 'analyzed'
+        GROUP BY hour_offset
+        ORDER BY hour_offset
+    """)
+
+    total_nights = len(sessions) or 1
+    aggregate_hourly = []
+    for hr in hourly_rows:
+        h = hr["hour_offset"]
+        aggregate_hourly.append({
+            "hour": h,
+            "label": f"Hour {h + 1}",
+            "avg_plm": round(hr["plm_count"] / total_nights, 1),
+            "avg_body": round(hr["body_count"] / total_nights, 1),
+            "night_count": hr["night_count"],
+        })
+
+    return {"sessions": sessions, "aggregate_hourly": aggregate_hourly}
+
+
 async def insert_video(video_id: str, filename: str, start_utc: str, end_utc: str,
                        start_local: str, end_local: str, duration_sec: float,
                        session_id: str | None = None):
