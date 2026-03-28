@@ -19,12 +19,13 @@ import {
   EmptyDescription,
 } from "@/components/ui/empty"
 import { Moon, ArrowRight, Settings } from "lucide-react"
+import { ErrorState } from "@/shared/components/error-state"
 import { formatDate } from "@/shared/lib/utils"
 import type { Night } from "@/shared/types/api"
 
 export default function DashboardPage() {
   const navigate = useNavigate()
-  const { data: sessions, isLoading } = useSessions()
+  const { data: sessions, isLoading, isError, refetch } = useSessions()
   const { data: active } = useActiveSession()
 
   // Convert sessions to Night-like format for existing stats hook
@@ -44,6 +45,10 @@ export default function DashboardPage() {
     }))
 
   const stats = useDashboardStats(nightsLike)
+
+  if (isError) {
+    return <ErrorState title="Failed to load dashboard" retry={refetch} />
+  }
 
   if (isLoading) {
     return (

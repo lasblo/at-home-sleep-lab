@@ -21,6 +21,7 @@ import {
   EmptyDescription,
 } from "@/components/ui/empty"
 import { CalendarDays } from "lucide-react"
+import { ErrorState } from "@/shared/components/error-state"
 import { formatDate, formatDuration } from "@/shared/lib/utils"
 
 const statusBadge: Record<string, React.ReactNode> = {
@@ -50,7 +51,11 @@ const statusBadge: Record<string, React.ReactNode> = {
 
 export default function SessionsPage() {
   const navigate = useNavigate()
-  const { data: sessions, isLoading } = useSessions()
+  const { data: sessions, isLoading, isError, refetch } = useSessions()
+
+  if (isError) {
+    return <ErrorState title="Failed to load sessions" retry={refetch} />
+  }
 
   if (isLoading) {
     return (

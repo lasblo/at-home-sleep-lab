@@ -30,11 +30,12 @@ import {
   EmptyDescription,
 } from "@/components/ui/empty"
 import { Heart, Wifi, WifiOff } from "lucide-react"
+import { ErrorState } from "@/shared/components/error-state"
 import { formatDate } from "@/shared/lib/utils"
 
 export default function HeartRatePage() {
   const navigate = useNavigate()
-  const { data: sessions, isLoading: sessionsLoading } = useSessions()
+  const { data: sessions, isLoading: sessionsLoading, isError, refetch } = useSessions()
   const { data: hrStatus } = useQuery({
     queryKey: ["hr", "status"],
     queryFn: async () => {
@@ -51,6 +52,10 @@ export default function HeartRatePage() {
   )
 
   const isConnected = hrStatus?.status === "connected" || hrStatus?.status === "streaming"
+
+  if (isError) {
+    return <ErrorState title="Failed to load heart rate data" retry={refetch} />
+  }
 
   if (sessionsLoading) {
     return (

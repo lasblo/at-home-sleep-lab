@@ -2,6 +2,7 @@ import { useParams, useNavigate } from "react-router-dom"
 import { useSessionDetail } from "./hooks/use-sessions"
 import { PageHeader } from "@/shared/components/page-header"
 import { PlmiBadge } from "@/shared/components/plmi-badge"
+import { NotFound, ErrorState } from "@/shared/components/error-state"
 import { HourlyChart } from "@/features/nights/components/hourly-chart"
 import {
   Card,
@@ -18,7 +19,7 @@ import { formatFullDate, formatDuration, formatClockTime } from "@/shared/lib/ut
 export default function SessionDetailPage() {
   const { sessionId } = useParams<{ sessionId: string }>()
   const navigate = useNavigate()
-  const { data: session, isLoading } = useSessionDetail(sessionId)
+  const { data: session, isLoading, isError, refetch } = useSessionDetail(sessionId)
 
   if (isLoading) {
     return (
@@ -30,7 +31,20 @@ export default function SessionDetailPage() {
     )
   }
 
-  if (!session) return null
+  if (isError) {
+    return <ErrorState title="Failed to load session" retry={refetch} />
+  }
+
+  if (!session) {
+    return (
+      <NotFound
+        title="Session not found"
+        description="This session doesn't exist or has been deleted."
+        backTo="/sessions"
+        backLabel="Back to sessions"
+      />
+    )
+  }
 
   const isRecording = session.status === "recording"
 

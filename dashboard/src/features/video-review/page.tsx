@@ -4,6 +4,7 @@ import { useVideoResults } from "./hooks/use-video-results"
 import { useHeartRate } from "./hooks/use-heart-rate"
 import { useProcessing } from "@/features/processing/hooks/use-processing"
 import { PageHeader } from "@/shared/components/page-header"
+import { NotFound, ErrorState } from "@/shared/components/error-state"
 import { VideoPlayer } from "./components/video-player"
 import { MotionTimeline } from "./components/motion-timeline"
 import { EventTable } from "./components/event-table"
@@ -22,7 +23,7 @@ import { formatClockTime } from "@/shared/lib/utils"
 
 export default function VideoReviewPage() {
   const { videoId } = useParams<{ videoId: string }>()
-  const { data: results, isLoading } = useVideoResults(videoId)
+  const { data: results, isLoading, isError, refetch } = useVideoResults(videoId)
   const { reanalyze, status } = useProcessing()
 
   const { data: hrResponse } = useHeartRate(
@@ -49,22 +50,18 @@ export default function VideoReviewPage() {
     )
   }
 
+  if (isError) {
+    return <ErrorState title="Failed to load video" retry={refetch} />
+  }
+
   if (!results) {
     return (
-      <div className="flex flex-col gap-6 p-6">
-        <PageHeader title="Video Review" />
-        <Empty className="min-h-[400px]">
-          <EmptyMedia variant="icon">
-            <Video />
-          </EmptyMedia>
-          <EmptyHeader>
-            <EmptyTitle>Video not found</EmptyTitle>
-            <EmptyDescription>
-              This video has not been processed yet or does not exist.
-            </EmptyDescription>
-          </EmptyHeader>
-        </Empty>
-      </div>
+      <NotFound
+        title="Video not found"
+        description="This video has not been processed yet or does not exist."
+        backTo="/sessions"
+        backLabel="Back to sessions"
+      />
     )
   }
 
