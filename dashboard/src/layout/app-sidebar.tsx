@@ -74,7 +74,7 @@ export function AppSidebar() {
                 <div className="flex flex-col gap-0.5 leading-none">
                   <span className="font-semibold">Sleep Lab</span>
                   <span className="text-xs text-muted-foreground">
-                    PLMS Detector
+                    But at Home
                   </span>
                 </div>
               </div>
