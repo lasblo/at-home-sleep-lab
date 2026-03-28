@@ -1,6 +1,6 @@
 import { useRef, useEffect, useState, useCallback, useImperativeHandle, forwardRef } from 'react'
 
-const SPEEDS = [1, 2, 4, 10, 20, 35, 50]
+const SPEEDS = [1, 2, 4, 8, 16]
 
 const styles = {
   container: {
@@ -95,8 +95,12 @@ const VideoPlayer = forwardRef(function VideoPlayer({ filename, seekTo, onTimeUp
 
   useEffect(() => {
     if (videoRef.current) {
-      videoRef.current.playbackRate = speed
-      // Mute above 2x to avoid chipmunk audio
+      try {
+        videoRef.current.playbackRate = speed
+      } catch {
+        // Browser caps playbackRate (typically 16x max) — clamp to max supported
+        videoRef.current.playbackRate = 16
+      }
       videoRef.current.muted = speed > 2
     }
   }, [speed])
