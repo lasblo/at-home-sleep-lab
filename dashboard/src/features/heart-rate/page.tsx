@@ -29,8 +29,9 @@ import {
   EmptyTitle,
   EmptyDescription,
 } from "@/components/ui/empty"
-import { Heart, Wifi, WifiOff } from "lucide-react"
+import { Heart, Loader2, Wifi, WifiOff } from "lucide-react"
 import { ErrorState } from "@/shared/components/error-state"
+import { useActiveSession } from "@/features/sessions/hooks/use-sessions"
 import { formatDate } from "@/shared/lib/utils"
 import type { DashboardSession } from "@/shared/types/api"
 import {
@@ -236,6 +237,7 @@ function HRRangeChart({ sessions }: { sessions: DashboardSession[] }) {
 export default function HeartRatePage() {
   const navigate = useNavigate()
   const { data: summary, isLoading, isError, refetch } = useDashboardSummary()
+  const { data: activeSession } = useActiveSession()
   const { data: hrStatus } = useQuery({
     queryKey: ["hr", "status"],
     queryFn: async () => {
@@ -282,6 +284,8 @@ export default function HeartRatePage() {
 
   const isConnected =
     hrStatus?.status === "connected" || hrStatus?.status === "streaming"
+  const isConnecting = hrStatus?.status === "connecting"
+  const hasActiveSession = activeSession?.status === "recording"
 
   if (isError) {
     return <ErrorState title="Failed to load heart rate data" retry={refetch} />
@@ -302,7 +306,7 @@ export default function HeartRatePage() {
   }
 
   return (
-    <div className="flex flex-col gap-6 p-6">
+    <div className="flex flex-col gap-8 p-6">
       <PageHeader
         title="Heart Rate"
         description="Cardiac monitoring and nocturnal HR analytics"
@@ -311,7 +315,7 @@ export default function HeartRatePage() {
       {/* Live status */}
       <Card>
         <CardHeader>
-          <CardTitle className="text-sm">WHOOP Status</CardTitle>
+          <CardTitle className="text-sm">HR Monitor Status</CardTitle>
           <CardDescription>
             HR monitoring starts and stops automatically with sleep sessions.
           </CardDescription>
@@ -335,6 +339,14 @@ export default function HeartRatePage() {
                   )}
                 </div>
               </>
+            ) : isConnecting || (hasActiveSession && !isConnected) ? (
+              <>
+                <Loader2 className="size-5 animate-spin text-muted-foreground" />
+                <Badge variant="outline">Connecting</Badge>
+                <span className="text-xs text-muted-foreground">
+                  Session active — waiting for HR device
+                </span>
+              </>
             ) : (
               <>
                 <WifiOff className="size-5 text-muted-foreground" />
@@ -356,117 +368,133 @@ export default function HeartRatePage() {
           <EmptyHeader>
             <EmptyTitle>No heart rate data</EmptyTitle>
             <EmptyDescription>
-              Enable WHOOP in Settings and run a sleep session to collect
-              cardiac arousal data.
+              Enable a BLE heart rate monitor in Settings and run a sleep
+              session to collect cardiac arousal data.
             </EmptyDescription>
           </EmptyHeader>
         </Empty>
       ) : (
         <>
           {/* Stat cards */}
-          <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-5">
-            <StatCard
-              label="Sleeping HR"
-              value={`${stats.avgSleepingHR} bpm`}
-              description="Lowest 5-min median"
-            />
-            <StatCard
-              label="Avg HR"
-              value={`${stats.avgHR} bpm`}
-              description="Nightly average"
-            />
-            {stats.avgDip != null && (
+          <section className="flex flex-col gap-3">
+            <h2 className="text-sm font-medium text-muted-foreground">
+              Key Metrics
+            </h2>
+            <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-5">
               <StatCard
-                label="Nocturnal Dip"
-                value={`${stats.avgDip}%`}
-                description={
-                  stats.avgDip >= 10 ? "Dipper (healthy)" : "Non-dipper"
-                }
+                label="Sleeping HR"
+                value={`${stats.avgSleepingHR} bpm`}
+                description="Lowest 5-min median"
+                tooltip="Your lowest sustained heart rate during sleep, measured as the lowest 5-minute median. A healthy sleeping HR is typically 40-60 bpm."
               />
-            )}
-            {stats.avgArousal != null && (
               <StatCard
-                label="Arousal Rate"
-                value={`${stats.avgArousal}%`}
-                description="PLMs causing arousals"
+                label="Avg HR"
+                value={`${stats.avgHR} bpm`}
+                description="Nightly average"
+                tooltip="Your average heart rate across the entire night. This includes lighter sleep stages where HR is naturally higher."
               />
-            )}
-            <StatCard
-              label="HR Sessions"
-              value={stats.sessionCount.toString()}
-              description={`${(stats.totalReadings / 1000).toFixed(0)}k readings`}
-            />
-          </div>
+              {stats.avgDip != null && (
+                <StatCard
+                  label="Nocturnal Dip"
+                  value={`${stats.avgDip}%`}
+                  description={
+                    stats.avgDip >= 10 ? "Dipper (healthy)" : "Non-dipper"
+                  }
+                  tooltip="How much your heart rate drops during sleep compared to waking. A 10%+ dip (dipper) is associated with good cardiovascular health. Under 10% (non-dipper) may warrant discussion with your doctor."
+                />
+              )}
+              {stats.avgArousal != null && (
+                <StatCard
+                  label="Arousal Rate"
+                  value={`${stats.avgArousal}%`}
+                  description="PLMs causing arousals"
+                  tooltip="Percentage of periodic limb movements that cause a detectable heart rate spike (arousal). Arousals fragment sleep even if you don't fully wake up."
+                />
+              )}
+              <StatCard
+                label="HR Sessions"
+                value={stats.sessionCount.toString()}
+                description={`${(stats.totalReadings / 1000).toFixed(0)}k readings`}
+                tooltip="Total nights with heart rate data and total number of HR readings collected."
+              />
+            </div>
+          </section>
 
           {/* Trend charts */}
-          <HRTrendChart sessions={summary!.sessions} />
-
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-            <NocturnalDipChart sessions={summary!.sessions} />
-            <HRRangeChart sessions={summary!.sessions} />
-          </div>
+          <section className="flex flex-col gap-3">
+            <h2 className="text-sm font-medium text-muted-foreground">
+              Trends Over Time
+            </h2>
+            <HRTrendChart sessions={summary!.sessions} />
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+              <NocturnalDipChart sessions={summary!.sessions} />
+              <HRRangeChart sessions={summary!.sessions} />
+            </div>
+          </section>
 
           {/* Sessions table */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-sm">Nightly HR Details</CardTitle>
-              <CardDescription>Click to view session details</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Date</TableHead>
-                    <TableHead className="text-right">Sleep HR</TableHead>
-                    <TableHead className="text-right">Avg HR</TableHead>
-                    <TableHead className="text-right">Min</TableHead>
-                    <TableHead className="text-right">Max</TableHead>
-                    <TableHead className="text-right">Dip</TableHead>
-                    <TableHead className="text-right">Arousal</TableHead>
-                    <TableHead className="text-right">Readings</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {hrSessions.map((s) => (
-                    <TableRow
-                      key={s.session_id}
-                      className="cursor-pointer"
-                      onClick={() => navigate(`/sessions/${s.session_id}`)}
-                    >
-                      <TableCell className="font-medium">
-                        {formatDate(s.night_date)}
-                      </TableCell>
-                      <TableCell className="text-right font-medium text-chart-2 tabular-nums">
-                        {s.hr_stats!.sleeping_hr} bpm
-                      </TableCell>
-                      <TableCell className="text-right tabular-nums">
-                        {s.hr_stats!.avg_hr}
-                      </TableCell>
-                      <TableCell className="text-right tabular-nums">
-                        {s.hr_stats!.min_hr}
-                      </TableCell>
-                      <TableCell className="text-right tabular-nums">
-                        {s.hr_stats!.max_hr}
-                      </TableCell>
-                      <TableCell className="text-right tabular-nums">
-                        {s.hr_stats!.dip_pct != null
-                          ? `${s.hr_stats!.dip_pct.toFixed(1)}%`
-                          : "-"}
-                      </TableCell>
-                      <TableCell className="text-right tabular-nums">
-                        {s.arousal_pct != null
-                          ? `${s.arousal_pct.toFixed(0)}%`
-                          : "-"}
-                      </TableCell>
-                      <TableCell className="text-right text-muted-foreground tabular-nums">
-                        {(s.hr_stats!.reading_count / 1000).toFixed(1)}k
-                      </TableCell>
+          <section>
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-sm">Nightly HR Details</CardTitle>
+                <CardDescription>Click to view session details</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Date</TableHead>
+                      <TableHead className="text-right">Sleep HR</TableHead>
+                      <TableHead className="text-right">Avg HR</TableHead>
+                      <TableHead className="text-right">Min</TableHead>
+                      <TableHead className="text-right">Max</TableHead>
+                      <TableHead className="text-right">Dip</TableHead>
+                      <TableHead className="text-right">Arousal</TableHead>
+                      <TableHead className="text-right">Readings</TableHead>
                     </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </CardContent>
-          </Card>
+                  </TableHeader>
+                  <TableBody>
+                    {hrSessions.map((s) => (
+                      <TableRow
+                        key={s.session_id}
+                        className="cursor-pointer"
+                        onClick={() => navigate(`/sessions/${s.session_id}`)}
+                      >
+                        <TableCell className="font-medium">
+                          {formatDate(s.night_date)}
+                        </TableCell>
+                        <TableCell className="text-right font-medium text-chart-2 tabular-nums">
+                          {s.hr_stats!.sleeping_hr} bpm
+                        </TableCell>
+                        <TableCell className="text-right tabular-nums">
+                          {s.hr_stats!.avg_hr}
+                        </TableCell>
+                        <TableCell className="text-right tabular-nums">
+                          {s.hr_stats!.min_hr}
+                        </TableCell>
+                        <TableCell className="text-right tabular-nums">
+                          {s.hr_stats!.max_hr}
+                        </TableCell>
+                        <TableCell className="text-right tabular-nums">
+                          {s.hr_stats!.dip_pct != null
+                            ? `${s.hr_stats!.dip_pct.toFixed(1)}%`
+                            : "-"}
+                        </TableCell>
+                        <TableCell className="text-right tabular-nums">
+                          {s.arousal_pct != null
+                            ? `${s.arousal_pct.toFixed(0)}%`
+                            : "-"}
+                        </TableCell>
+                        <TableCell className="text-right text-muted-foreground tabular-nums">
+                          {(s.hr_stats!.reading_count / 1000).toFixed(1)}k
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </CardContent>
+            </Card>
+          </section>
         </>
       )}
     </div>

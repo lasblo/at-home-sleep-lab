@@ -13,7 +13,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Badge } from "@/components/ui/badge"
 import { Spinner } from "@/components/ui/spinner"
-import { CheckCircle2, XCircle, Bluetooth } from "lucide-react"
+import { Bluetooth } from "lucide-react"
 import { toast } from "sonner"
 
 export function BluetoothCard() {
@@ -76,7 +76,7 @@ export function BluetoothCard() {
         <CardTitle>Bluetooth</CardTitle>
         <CardDescription>
           {isConfigured && !editing
-            ? "BLE proxy service is configured. Used for WHOOP and other Bluetooth devices."
+            ? "BLE proxy service is configured. Used for heart rate monitors and other Bluetooth devices."
             : "Connect to the host-side BLE proxy service for Bluetooth device access. Start it with: make ble"}
         </CardDescription>
       </CardHeader>

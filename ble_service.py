@@ -1,4 +1,4 @@
-"""BLE Host Microservice — Bluetooth proxy for WHOOP HR monitoring.
+"""BLE Host Microservice — Bluetooth proxy for BLE heart rate monitoring.
 
 Runs on the host (not Docker) to access Bluetooth hardware.
 The backend calls this service over HTTP to discover devices,
