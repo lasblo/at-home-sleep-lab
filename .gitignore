@@ -5,4 +5,4 @@ __pycache__/
 *.pyc
 videos/
 .DS_Store
-swift-motion/.build/
+swift-motion/
