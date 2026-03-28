@@ -1,17 +1,21 @@
-"""BLE Host Microservice for WHOOP Heart Rate Monitoring.
+"""BLE Host Microservice — Bluetooth proxy for WHOOP HR monitoring.
 
-Runs on the host machine (not in Docker) to access Bluetooth hardware.
-Controlled by the backend via HTTP at :8001.
+Runs on the host (not Docker) to access Bluetooth hardware.
+The backend calls this service over HTTP to discover devices,
+test connections, and start/stop HR streaming.
 
 Usage: make ble  (or: .venv/bin/python ble_service.py)
 """
 
+import asyncio
 import json
+import os
 import signal
-import subprocess
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 
+from bleak import BleakScanner, BleakClient
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
@@ -19,87 +23,222 @@ import uvicorn
 app = FastAPI(title="BLE Service")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
-HR_SCRIPT = Path(__file__).parent / "backend" / "whoop_hr.py"
+HR_SERVICE = "0000180d-0000-1000-8000-00805f9b34fb"
+HR_CHAR = "00002a37-0000-1000-8000-00805f9b34fb"
+
 HR_INPUT_DIR = Path(__file__).parent / "hr_input"
+HR_INPUT_DIR.mkdir(parents=True, exist_ok=True)
 HR_STATUS_FILE = HR_INPUT_DIR / "hr_status.json"
 
-_process: subprocess.Popen | None = None
+# Streaming state
+_stream_task: asyncio.Task | None = None
+_stream_device: str | None = None
+_readings_count: int = 0
 
 
-@app.get("/status")
-async def status():
-    running = _process is not None and _process.poll() is None
-    if HR_STATUS_FILE.exists():
-        try:
-            data = json.loads(HR_STATUS_FILE.read_text())
-            data["managed"] = running
-            return data
-        except (json.JSONDecodeError, OSError):
-            pass
-    return {"status": "running" if running else "stopped", "managed": running}
+def _parse_hr(data: bytearray) -> int:
+    flags = data[0]
+    if flags & 1:
+        return int.from_bytes(data[1:3], "little")
+    return data[1]
 
+
+def _write_status(status: str, device: str | None = None, hr: int | None = None):
+    HR_STATUS_FILE.write_text(json.dumps({
+        "status": status,
+        "device": device,
+        "hr": hr,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }))
+
+
+def _hr_file() -> Path:
+    return HR_INPUT_DIR / f"{datetime.now(timezone.utc).strftime('%Y-%m-%d')}.jsonl"
+
+
+# ── Discovery ───────────────────────────────────────────────────────
+
+@app.get("/discover")
+async def discover():
+    """Scan for BLE devices with Heart Rate service. Returns list of devices."""
+    try:
+        devices = await BleakScanner.discover(timeout=8, return_adv=True)
+    except Exception as e:
+        return {"ok": False, "error": str(e), "devices": []}
+
+    hr_devices = []
+    for d, adv in devices.values():
+        has_hr = HR_SERVICE in (adv.service_uuids or [])
+        if has_hr:
+            hr_devices.append({
+                "address": d.address,
+                "name": d.name or "Unknown",
+            })
+
+    return {"ok": True, "devices": hr_devices}
+
+
+# ── Test Connection ─────────────────────────────────────────────────
+
+@app.post("/test")
+async def test(request_body: dict | None = None):
+    """Connect to a device briefly and read one HR value to verify it works."""
+    import starlette.requests
+    # Parse body
+    if request_body is None:
+        return {"ok": False, "error": "No request body"}
+    address = request_body.get("address")
+    if not address:
+        return {"ok": False, "error": "Missing 'address' field"}
+
+    try:
+        async with BleakClient(address, timeout=10) as client:
+            if not client.is_connected:
+                return {"ok": False, "error": "Failed to connect"}
+
+            hr_value = None
+            event = asyncio.Event()
+
+            def callback(_, data):
+                nonlocal hr_value
+                hr_value = _parse_hr(data)
+                event.set()
+
+            await client.start_notify(HR_CHAR, callback)
+            try:
+                await asyncio.wait_for(event.wait(), timeout=10)
+            except asyncio.TimeoutError:
+                return {"ok": False, "error": "Connected but no HR data received within 10s"}
+            finally:
+                await client.stop_notify(HR_CHAR)
+
+            return {"ok": True, "hr": hr_value, "address": address}
+
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+# ── Start/Stop Streaming ───────────────────────────────────────────
 
 @app.post("/start")
-async def start():
-    global _process
-    if _process and _process.poll() is None:
-        return {"status": "already_running", "pid": _process.pid}
+async def start(request_body: dict | None = None):
+    """Start continuous HR streaming from a specific device."""
+    global _stream_task, _stream_device
 
-    if not HR_SCRIPT.exists():
-        return {"status": "error", "error": f"Script not found: {HR_SCRIPT}"}
+    if _stream_task and not _stream_task.done():
+        return {"status": "already_running", "device": _stream_device}
 
-    HR_INPUT_DIR.mkdir(parents=True, exist_ok=True)
+    if not request_body:
+        return {"status": "error", "error": "No request body"}
+    address = request_body.get("address")
+    if not address:
+        return {"status": "error", "error": "Missing 'address' field"}
 
-    # Find the Python with bleak installed
-    python = sys.executable
-    _process = subprocess.Popen(
-        [python, str(HR_SCRIPT)],
-        cwd=str(Path(__file__).parent),
-        env={**__import__("os").environ, "OUTPUT_DIR": str(HR_INPUT_DIR.parent)},
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-    )
-
-    # Wait briefly to detect immediate crash
-    import time
-    time.sleep(2)
-    if _process.poll() is not None:
-        stderr = _process.stderr.read().decode() if _process.stderr else ""
-        _process = None
-        if "FileNotFoundError" in stderr or "dbus" in stderr.lower():
-            return {"status": "error", "error": "Bluetooth not available on this system."}
-        lines = [l for l in stderr.strip().splitlines() if l.strip()]
-        return {"status": "error", "error": lines[-1] if lines else "Process exited immediately."}
-
-    return {"status": "started", "pid": _process.pid}
+    _stream_device = address
+    _stream_task = asyncio.create_task(_stream_hr(address))
+    return {"status": "started", "device": address}
 
 
 @app.post("/stop")
 async def stop():
-    global _process
-    if not _process or _process.poll() is not None:
-        _process = None
-        if HR_STATUS_FILE.exists():
-            HR_STATUS_FILE.unlink(missing_ok=True)
-        return {"status": "stopped"}
+    """Stop HR streaming."""
+    global _stream_task, _stream_device
+    if _stream_task and not _stream_task.done():
+        _stream_task.cancel()
+        try:
+            await _stream_task
+        except asyncio.CancelledError:
+            pass
+    _stream_task = None
+    _stream_device = None
+    _write_status("stopped")
+    return {"status": "stopped"}
 
-    _process.send_signal(signal.SIGTERM)
+
+@app.get("/status")
+async def status():
+    """Current streaming status."""
+    running = _stream_task is not None and not _stream_task.done()
+    if HR_STATUS_FILE.exists():
+        try:
+            data = json.loads(HR_STATUS_FILE.read_text())
+            data["running"] = running
+            return data
+        except (json.JSONDecodeError, OSError):
+            pass
+    return {"status": "stopped", "running": running}
+
+
+# ── Streaming Loop ──────────────────────────────────────────────────
+
+async def _stream_hr(address: str):
+    """Connect to device and stream HR data to JSONL files."""
+    global _readings_count
+    _readings_count = 0
+
+    _write_status("connecting", device=address)
+    print(f"Connecting to {address}...")
+
     try:
-        _process.wait(timeout=5)
-    except subprocess.TimeoutExpired:
-        _process.kill()
+        async with BleakClient(address, timeout=15) as client:
+            if not client.is_connected:
+                _write_status("failed", device=address)
+                return
 
-    pid = _process.pid
-    _process = None
-    HR_STATUS_FILE.unlink(missing_ok=True)
-    return {"status": "stopped", "pid": pid}
+            device_name = address
+            # Try to get friendly name
+            try:
+                for service in client.services:
+                    pass
+                device_name = client.services.characteristics.get(
+                    "00002a00-0000-1000-8000-00805f9b34fb", address
+                )
+            except Exception:
+                pass
 
+            print(f"Connected to {address}. Streaming HR...")
+            _write_status("connected", device=address)
+
+            def callback(_, data):
+                global _readings_count
+                hr = _parse_hr(data)
+                _readings_count += 1
+                now = datetime.now(timezone.utc)
+
+                entry = {
+                    "ts": now.isoformat(),
+                    "epoch": now.timestamp(),
+                    "hr": hr,
+                    "device": address,
+                }
+                with open(_hr_file(), "a") as f:
+                    f.write(json.dumps(entry) + "\n")
+
+                _write_status("streaming", device=address, hr=hr)
+                print(f"\r  HR: {hr} bpm  ({_readings_count} readings)  ", end="", flush=True)
+
+            await client.start_notify(HR_CHAR, callback)
+
+            try:
+                while client.is_connected:
+                    await asyncio.sleep(1)
+            except asyncio.CancelledError:
+                print(f"\nStopping stream ({_readings_count} readings)")
+            finally:
+                _write_status("disconnected", device=address)
+
+    except asyncio.CancelledError:
+        _write_status("stopped", device=address)
+    except Exception as e:
+        print(f"Stream error: {e}")
+        _write_status("error", device=address)
+
+
+# ── Main ────────────────────────────────────────────────────────────
 
 def _shutdown(signum, frame):
-    global _process
-    if _process and _process.poll() is None:
-        _process.terminate()
-        _process.wait(timeout=5)
+    if _stream_task and not _stream_task.done():
+        _stream_task.cancel()
     sys.exit(0)
 
 
@@ -107,6 +246,5 @@ if __name__ == "__main__":
     signal.signal(signal.SIGINT, _shutdown)
     signal.signal(signal.SIGTERM, _shutdown)
     print(f"BLE Service starting on :8001")
-    print(f"HR script: {HR_SCRIPT}")
-    print(f"HR input dir: {HR_INPUT_DIR}")
+    print(f"HR data dir: {HR_INPUT_DIR}")
     uvicorn.run(app, host="0.0.0.0", port=8001, log_level="info")

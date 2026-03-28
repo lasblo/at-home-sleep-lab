@@ -245,6 +245,67 @@ async def hr_ingest():
     return {"ingested": count}
 
 
+# ── BLE Proxy (forwards to host BLE service) ───────────────────────
+
+async def _ble_url() -> str:
+    settings = await db.get_setting("whoop")
+    return (settings or {}).get("ble_service_url", "http://host.docker.internal:8001")
+
+
+@app.get("/api/ble/discover")
+async def ble_discover():
+    """Discover WHOOP devices via host BLE service."""
+    import httpx
+    url = await _ble_url()
+    try:
+        async with httpx.AsyncClient(timeout=20) as client:
+            resp = await client.get(f"{url}/discover")
+            return resp.json()
+    except Exception as e:
+        return {"ok": False, "error": f"BLE service unreachable: {e}", "devices": []}
+
+
+@app.post("/api/ble/test")
+async def ble_test(request: Request):
+    """Test HR reading from a specific device via host BLE service."""
+    import httpx
+    url = await _ble_url()
+    body = await request.json()
+    try:
+        async with httpx.AsyncClient(timeout=20) as client:
+            resp = await client.post(f"{url}/test", json=body)
+            return resp.json()
+    except Exception as e:
+        return {"ok": False, "error": f"BLE service unreachable: {e}"}
+
+
+@app.post("/api/ble/start")
+async def ble_start(request: Request):
+    """Start HR streaming via host BLE service."""
+    import httpx
+    url = await _ble_url()
+    body = await request.json()
+    try:
+        async with httpx.AsyncClient(timeout=20) as client:
+            resp = await client.post(f"{url}/start", json=body)
+            return resp.json()
+    except Exception as e:
+        return {"status": "error", "error": f"BLE service unreachable: {e}"}
+
+
+@app.post("/api/ble/stop")
+async def ble_stop():
+    """Stop HR streaming via host BLE service."""
+    import httpx
+    url = await _ble_url()
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            resp = await client.post(f"{url}/stop")
+            return resp.json()
+    except Exception as e:
+        return {"status": "error", "error": f"BLE service unreachable: {e}"}
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)

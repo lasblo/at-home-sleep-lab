@@ -132,27 +132,89 @@ export default function SettingsPage() {
     },
   })
 
-  const [whoopEnabled, setWhoopEnabled] = useState(false)
+  const [whoopEditing, setWhoopEditing] = useState(false)
   const [bleUrl, setBleUrl] = useState("http://host.docker.internal:8001")
+  const [whoopDevices, setWhoopDevices] = useState<Array<{ address: string; name: string }>>([])
+  const [selectedDevice, setSelectedDevice] = useState("")
+  const [testHr, setTestHr] = useState<number | null>(null)
+
+  const whoopConfigured = !!(whoopSettings?.enabled && whoopSettings?.device_address)
 
   useEffect(() => {
     if (whoopSettings) {
-      setWhoopEnabled(whoopSettings.enabled ?? false)
       setBleUrl(whoopSettings.ble_service_url || "http://host.docker.internal:8001")
+      setSelectedDevice(whoopSettings.device_address || "")
     }
   }, [whoopSettings])
 
+  const discoverDevices = useMutation({
+    mutationFn: async () => {
+      const res = await fetch("/api/ble/discover")
+      return res.json()
+    },
+    onSuccess: (data) => {
+      if (data.ok) {
+        setWhoopDevices(data.devices)
+        if (data.devices.length === 0) toast.info("No HR devices found. Make sure WHOOP is nearby.")
+        else if (data.devices.length === 1) setSelectedDevice(data.devices[0].address)
+      } else {
+        toast.error(data.error || "Discovery failed. Is the BLE service running? (make ble)")
+      }
+    },
+  })
+
+  const testDevice = useMutation({
+    mutationFn: async () => {
+      const res = await fetch("/api/ble/test", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ address: selectedDevice }),
+      })
+      return res.json()
+    },
+    onSuccess: (data) => {
+      if (data.ok) {
+        setTestHr(data.hr)
+        toast.success(`HR reading: ${data.hr} bpm`)
+      } else {
+        toast.error(data.error || "Test failed")
+      }
+    },
+  })
+
   const saveWhoop = useMutation({
     mutationFn: async () => {
+      const deviceName = whoopDevices.find((d) => d.address === selectedDevice)?.name || selectedDevice
       const res = await fetch("/api/settings/whoop", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ enabled: whoopEnabled, ble_service_url: bleUrl }),
+        body: JSON.stringify({
+          enabled: true,
+          ble_service_url: bleUrl,
+          device_address: selectedDevice,
+          device_name: deviceName,
+        }),
       })
       return res.json()
     },
     onSuccess: () => {
       toast.success("WHOOP settings saved")
+      setWhoopEditing(false)
+      queryClient.invalidateQueries({ queryKey: ["settings"] })
+    },
+  })
+
+  const disableWhoop = useMutation({
+    mutationFn: async () => {
+      const res = await fetch("/api/settings/whoop", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ enabled: false }),
+      })
+      return res.json()
+    },
+    onSuccess: () => {
+      toast.success("WHOOP disabled")
       queryClient.invalidateQueries({ queryKey: ["settings"] })
     },
   })
@@ -332,46 +394,137 @@ export default function SettingsPage() {
         <CardHeader>
           <CardTitle>WHOOP Heart Rate</CardTitle>
           <CardDescription>
-            Enable WHOOP BLE monitoring during sleep sessions for cardiac
-            arousal detection. Requires the BLE service running on the host
-            (make ble).
+            {whoopConfigured && !whoopEditing
+              ? "WHOOP HR monitoring is configured for sleep sessions."
+              : "Pair your WHOOP band for cardiac arousal detection during sleep. Requires the BLE service running on the host (make ble)."}
           </CardDescription>
         </CardHeader>
-        <CardContent className="flex flex-col gap-4">
-          <div className="flex items-center gap-3">
-            <Switch
-              checked={whoopEnabled}
-              onCheckedChange={setWhoopEnabled}
-              id="whoop-enabled"
-            />
-            <Label htmlFor="whoop-enabled">
-              Enable WHOOP during sleep sessions
-            </Label>
-          </div>
-          {whoopEnabled && (
-            <div className="flex flex-col gap-2">
-              <Label htmlFor="ble-url">BLE Service URL</Label>
-              <Input
-                id="ble-url"
-                value={bleUrl}
-                onChange={(e) => setBleUrl(e.target.value)}
-                placeholder="http://host.docker.internal:8001"
-              />
-              <p className="text-xs text-muted-foreground">
-                Default works for Docker Desktop. Change if running differently.
-              </p>
-            </div>
-          )}
-        </CardContent>
-        <CardFooter>
-          <Button
-            onClick={() => saveWhoop.mutate()}
-            disabled={saveWhoop.isPending}
-          >
-            {saveWhoop.isPending ? <Spinner data-icon="inline-start" /> : null}
-            Save WHOOP Settings
-          </Button>
-        </CardFooter>
+
+        {whoopConfigured && !whoopEditing ? (
+          <>
+            <CardContent className="flex flex-col gap-3">
+              <div className="flex items-center gap-3">
+                <CheckCircle2 className="size-5 text-severity-normal" />
+                <div className="flex flex-col gap-0.5">
+                  <span className="text-sm font-medium">
+                    {whoopSettings.device_name || whoopSettings.device_address}
+                  </span>
+                  <span className="font-mono text-xs text-muted-foreground">
+                    {whoopSettings.device_address}
+                  </span>
+                </div>
+                <Badge variant="secondary" className="bg-severity-normal/15 text-severity-normal text-[10px]">
+                  Configured
+                </Badge>
+              </div>
+            </CardContent>
+            <CardFooter className="gap-2">
+              <Button variant="outline" size="sm" onClick={() => setWhoopEditing(true)}>
+                Reconfigure
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => disableWhoop.mutate()}
+                disabled={disableWhoop.isPending}
+              >
+                Disable
+              </Button>
+            </CardFooter>
+          </>
+        ) : (
+          <>
+            <CardContent className="flex flex-col gap-4">
+              {/* BLE Service URL */}
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="ble-url">BLE Service URL</Label>
+                <Input
+                  id="ble-url"
+                  value={bleUrl}
+                  onChange={(e) => setBleUrl(e.target.value)}
+                  placeholder="http://host.docker.internal:8001"
+                />
+              </div>
+
+              {/* Step 1: Discover devices */}
+              <div className="flex items-center gap-3">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => discoverDevices.mutate()}
+                  disabled={discoverDevices.isPending}
+                >
+                  {discoverDevices.isPending ? <Spinner data-icon="inline-start" /> : null}
+                  Scan for Devices
+                </Button>
+                {whoopDevices.length > 0 && (
+                  <span className="text-xs text-muted-foreground">
+                    {whoopDevices.length} device{whoopDevices.length !== 1 && "s"} found
+                  </span>
+                )}
+              </div>
+
+              {/* Step 2: Select device */}
+              {whoopDevices.length > 0 && (
+                <>
+                  <Separator />
+                  <div className="flex flex-col gap-2">
+                    <Label>Device</Label>
+                    <Select value={selectedDevice} onValueChange={(v) => { setSelectedDevice(v); setTestHr(null) }}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select your WHOOP" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectGroup>
+                          {whoopDevices.map((d) => (
+                            <SelectItem key={d.address} value={d.address}>
+                              {d.name} ({d.address})
+                            </SelectItem>
+                          ))}
+                        </SelectGroup>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  {/* Step 3: Test */}
+                  {selectedDevice && (
+                    <div className="flex items-center gap-3">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => testDevice.mutate()}
+                        disabled={testDevice.isPending}
+                      >
+                        {testDevice.isPending ? <Spinner data-icon="inline-start" /> : null}
+                        Test HR Reading
+                      </Button>
+                      {testHr != null && (
+                        <Badge variant="secondary" className="bg-severity-normal/15 text-severity-normal">
+                          <CheckCircle2 className="mr-0.5" />
+                          {testHr} bpm
+                        </Badge>
+                      )}
+                    </div>
+                  )}
+                </>
+              )}
+            </CardContent>
+            <CardFooter className="gap-2">
+              <Button
+                onClick={() => saveWhoop.mutate()}
+                disabled={!selectedDevice || saveWhoop.isPending}
+              >
+                {saveWhoop.isPending ? <Spinner data-icon="inline-start" /> : null}
+                Save
+              </Button>
+              {whoopConfigured && (
+                <Button variant="outline" onClick={() => setWhoopEditing(false)}>
+                  Cancel
+                </Button>
+              )}
+            </CardFooter>
+          </>
+        )}
       </Card>
 
       <Separator />

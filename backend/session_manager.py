@@ -98,7 +98,8 @@ async def start_session() -> dict:
 
     if hr_enabled:
         try:
-            await _start_hr(ble_url)
+            device_address = whoop_settings.get("device_address")
+            await _start_hr(ble_url, device_address)
             logger.info("HR listener started via BLE service at %s", ble_url)
         except Exception:
             logger.exception("Failed to start HR listener — session continues without HR")
@@ -326,10 +327,13 @@ async def _fetch_and_process(
 # BLE HR service helpers
 # ---------------------------------------------------------------------------
 
-async def _start_hr(ble_url: str):
-    """Call BLE service to start HR monitoring."""
-    async with httpx.AsyncClient(timeout=10) as client:
-        resp = await client.post(f"{ble_url}/start")
+async def _start_hr(ble_url: str, device_address: str | None = None):
+    """Call BLE service to start HR monitoring for a specific device."""
+    body = {}
+    if device_address:
+        body["address"] = device_address
+    async with httpx.AsyncClient(timeout=20) as client:
+        resp = await client.post(f"{ble_url}/start", json=body)
         resp.raise_for_status()
         data = resp.json()
         logger.info("BLE HR start response: %s", data)
