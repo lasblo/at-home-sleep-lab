@@ -4,8 +4,11 @@ import { AppLayout } from "@/app/layout"
 import { Skeleton } from "@/components/ui/skeleton"
 
 const DashboardPage = lazy(() => import("@/features/dashboard/page"))
-const NightDetailPage = lazy(() => import("@/features/nights/page"))
+const NightsPage = lazy(() => import("@/features/nights/page"))
+const NightDetailPage = lazy(() => import("@/features/nights/detail-page"))
 const VideosPage = lazy(() => import("@/features/videos/page"))
+const VideoReviewPage = lazy(() => import("@/features/video-review/page"))
+const HeartRatePage = lazy(() => import("@/features/heart-rate/page"))
 const SettingsPage = lazy(() => import("@/features/settings/page"))
 
 function PageLoader() {
@@ -17,7 +20,7 @@ function PageLoader() {
   )
 }
 
-function LazyPage({ children }: { children: React.ReactNode }) {
+function Lazy({ children }: { children: React.ReactNode }) {
   return <Suspense fallback={<PageLoader />}>{children}</Suspense>
 }
 
@@ -26,46 +29,13 @@ export const router = createBrowserRouter([
     path: "/",
     element: <AppLayout />,
     children: [
-      {
-        index: true,
-        element: (
-          <LazyPage>
-            <DashboardPage />
-          </LazyPage>
-        ),
-      },
-      {
-        path: "nights/:date",
-        element: (
-          <LazyPage>
-            <NightDetailPage />
-          </LazyPage>
-        ),
-      },
-      {
-        path: "nights/:date/:videoId",
-        element: (
-          <LazyPage>
-            <NightDetailPage />
-          </LazyPage>
-        ),
-      },
-      {
-        path: "videos",
-        element: (
-          <LazyPage>
-            <VideosPage />
-          </LazyPage>
-        ),
-      },
-      {
-        path: "settings",
-        element: (
-          <LazyPage>
-            <SettingsPage />
-          </LazyPage>
-        ),
-      },
+      { index: true, element: <Lazy><DashboardPage /></Lazy> },
+      { path: "nights", element: <Lazy><NightsPage /></Lazy> },
+      { path: "nights/:date", element: <Lazy><NightDetailPage /></Lazy> },
+      { path: "videos", element: <Lazy><VideosPage /></Lazy> },
+      { path: "videos/:videoId", element: <Lazy><VideoReviewPage /></Lazy> },
+      { path: "heart-rate", element: <Lazy><HeartRatePage /></Lazy> },
+      { path: "settings", element: <Lazy><SettingsPage /></Lazy> },
       { path: "*", element: <Navigate to="/" replace /> },
     ],
   },

@@ -1,187 +1,229 @@
-import { useState, useCallback } from "react"
-import { useParams, useNavigate } from "react-router-dom"
-import { useNightDetail } from "./hooks/use-night-detail"
-import { useVideoResults } from "@/features/video-review/hooks/use-video-results"
-import { useHeartRate } from "@/features/video-review/hooks/use-heart-rate"
+import { useMemo, useState } from "react"
+import { useNavigate } from "react-router-dom"
+import { useNights } from "@/features/dashboard/hooks/use-nights"
 import { useProcessing } from "@/features/processing/hooks/use-processing"
 import { PageHeader } from "@/shared/components/page-header"
-import { NightStatsBar } from "./components/night-stats-bar"
-import { HourlyChart } from "./components/hourly-chart"
-import { SegmentList } from "./components/segment-list"
-import { SegmentSwitcher } from "./components/segment-switcher"
-import { VideoPlayer } from "@/features/video-review/components/video-player"
-import { MotionTimeline } from "@/features/video-review/components/motion-timeline"
-import { EventTable } from "@/features/video-review/components/event-table"
-import { VideoSummary } from "@/features/video-review/components/video-summary"
-import { Button } from "@/components/ui/button"
-import { Spinner } from "@/components/ui/spinner"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { ProcessButton } from "@/features/processing/components/process-button"
+import { PlmiBadge } from "@/shared/components/plmi-badge"
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table"
+import { Badge } from "@/components/ui/badge"
 import { Skeleton } from "@/components/ui/skeleton"
-import { RefreshCw } from "lucide-react"
-import { formatFullDate } from "@/shared/lib/utils"
+import { Spinner } from "@/components/ui/spinner"
+import {
+  Empty,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+  EmptyDescription,
+} from "@/components/ui/empty"
+import { MoonStar, ArrowUpDown } from "lucide-react"
+import { Button } from "@/components/ui/button"
+import { formatDate, formatDuration, formatClockTime } from "@/shared/lib/utils"
+import type { Night } from "@/shared/types/api"
 
-export default function NightDetailPage() {
-  const { date, videoId: urlVideoId } = useParams<{
-    date: string
-    videoId?: string
-  }>()
+type SortKey = "date" | "plmi" | "plms" | "series" | "duration"
+type SortDir = "asc" | "desc"
+
+function sortNights(nights: Night[], key: SortKey, dir: SortDir): Night[] {
+  const sorted = [...nights]
+  sorted.sort((a, b) => {
+    let cmp = 0
+    switch (key) {
+      case "date":
+        cmp = a.night_date.localeCompare(b.night_date)
+        break
+      case "plmi":
+        cmp = (a.summary?.plmi ?? -1) - (b.summary?.plmi ?? -1)
+        break
+      case "plms":
+        cmp = (a.summary?.plm_count ?? -1) - (b.summary?.plm_count ?? -1)
+        break
+      case "series":
+        cmp = (a.summary?.series_count ?? -1) - (b.summary?.series_count ?? -1)
+        break
+      case "duration":
+        cmp = a.total_hours - b.total_hours
+        break
+    }
+    return dir === "asc" ? cmp : -cmp
+  })
+  return sorted
+}
+
+export default function NightsPage() {
   const navigate = useNavigate()
-  const { data: night, isLoading } = useNightDetail(date)
-  const { isRunning, reprocessNight, reanalyze, status } = useProcessing()
+  const { data: nights, isLoading } = useNights()
+  const { status } = useProcessing()
+  const [sortKey, setSortKey] = useState<SortKey>("date")
+  const [sortDir, setSortDir] = useState<SortDir>("desc")
 
-  // Video selection: from URL param or local state
-  const [localVideoId, setLocalVideoId] = useState<string | null>(null)
-  const selectedVideoId = urlVideoId || localVideoId
-
-  const { data: videoResults } = useVideoResults(selectedVideoId ?? undefined)
-  const selectedVideo = night?.videos?.find((v) => v.id === selectedVideoId)
-  const { data: hrResponse } = useHeartRate(
-    selectedVideo?.start_local,
-    selectedVideo?.end_local
+  const sorted = useMemo(
+    () => sortNights(nights ?? [], sortKey, sortDir),
+    [nights, sortKey, sortDir]
   )
 
-  const [seekTo, setSeekTo] = useState<number | null>(null)
-  const [currentTime, setCurrentTime] = useState(0)
-
-  const handleSeek = useCallback((t: number) => {
-    setSeekTo(t)
-    setCurrentTime(t)
-  }, [])
-
-  const handleSelectVideo = useCallback(
-    (id: string) => {
-      if (urlVideoId) {
-        navigate(`/nights/${date}/${id}`)
-      } else {
-        setLocalVideoId(id)
-      }
-      setSeekTo(null)
-      setCurrentTime(0)
-    },
-    [date, navigate, urlVideoId]
-  )
+  const toggleSort = (key: SortKey) => {
+    if (sortKey === key) {
+      setSortDir((d) => (d === "asc" ? "desc" : "asc"))
+    } else {
+      setSortKey(key)
+      setSortDir(key === "date" ? "desc" : "desc")
+    }
+  }
 
   if (isLoading) {
     return (
       <div className="flex flex-col gap-6 p-6">
-        <Skeleton className="h-8 w-64" />
-        <Skeleton className="h-10 w-full" />
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-          <Skeleton className="col-span-2 h-[240px]" />
-          <Skeleton className="h-[240px]" />
-        </div>
+        <Skeleton className="h-8 w-48" />
+        <Skeleton className="h-[400px]" />
       </div>
     )
   }
 
-  if (!night) return null
+  if (!nights || nights.length === 0) {
+    return (
+      <div className="flex flex-col gap-6 p-6">
+        <PageHeader title="Nights">
+          <ProcessButton />
+        </PageHeader>
+        <Empty className="min-h-[400px]">
+          <EmptyMedia variant="icon">
+            <MoonStar />
+          </EmptyMedia>
+          <EmptyHeader>
+            <EmptyTitle>No nights recorded</EmptyTitle>
+            <EmptyDescription>
+              Process videos to see your night-by-night analysis.
+            </EmptyDescription>
+          </EmptyHeader>
+        </Empty>
+      </div>
+    )
+  }
+
+  const SortableHead = ({
+    label,
+    sortKeyName,
+  }: {
+    label: string
+    sortKeyName: SortKey
+  }) => (
+    <TableHead>
+      <Button
+        variant="ghost"
+        size="sm"
+        className="-ml-3 h-8"
+        onClick={() => toggleSort(sortKeyName)}
+      >
+        {label}
+        <ArrowUpDown data-icon="inline-end" />
+      </Button>
+    </TableHead>
+  )
 
   return (
-    <div className="flex flex-col gap-4 p-6">
-      <PageHeader title={formatFullDate(date!)}>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => reprocessNight.mutate(date!)}
-          disabled={isRunning}
-        >
-          {isRunning ? (
-            <>
-              <Spinner data-icon="inline-start" />
-              Processing...
-            </>
-          ) : (
-            <>
-              <RefreshCw data-icon="inline-start" />
-              Reprocess Night
-            </>
-          )}
-        </Button>
+    <div className="flex flex-col gap-6 p-6">
+      <PageHeader
+        title="Nights"
+        description={`${nights.length} night${nights.length !== 1 ? "s" : ""} recorded`}
+      >
+        <ProcessButton />
       </PageHeader>
 
-      <NightStatsBar night={night} />
+      <div className="rounded-md border">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <SortableHead label="Date" sortKeyName="date" />
+              <SortableHead label="PLMI" sortKeyName="plmi" />
+              <SortableHead label="PLMs" sortKeyName="plms" />
+              <SortableHead label="Series" sortKeyName="series" />
+              <TableHead>Body</TableHead>
+              <SortableHead label="Duration" sortKeyName="duration" />
+              <TableHead>Time</TableHead>
+              <TableHead>Arousal</TableHead>
+              <TableHead>Status</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {sorted.map((night) => {
+              const s = night.summary
+              const progress = status?.progress || {}
+              const isProcessing =
+                status?.running &&
+                night.video_ids.some(
+                  (id) => id in progress && progress[id] < 1
+                )
 
-      {/* Charts + segments when no video selected */}
-      {!selectedVideoId && (
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-          <div className="md:col-span-2">
-            {night.hourly_distribution && (
-              <HourlyChart hourly={night.hourly_distribution} />
-            )}
-          </div>
-          <SegmentList
-            videos={night.videos || []}
-            selectedId={selectedVideoId ?? undefined}
-            onSelect={handleSelectVideo}
-          />
-        </div>
-      )}
-
-      {/* Video review panel */}
-      {selectedVideoId && (
-        <div className="flex flex-col gap-3">
-          <SegmentSwitcher
-            videos={night.videos || []}
-            selectedId={selectedVideoId}
-            onSelect={handleSelectVideo}
-          />
-
-          {videoResults && selectedVideo ? (
-            <>
-              <VideoSummary
-                results={videoResults}
-                videoId={selectedVideoId}
-                onReanalyze={(id) => reanalyze.mutate(id)}
-                processing={status ?? undefined}
-              />
-
-              <VideoPlayer
-                filename={selectedVideo.filename}
-                seekTo={seekTo}
-                onTimeUpdate={setCurrentTime}
-              />
-
-              <Tabs defaultValue="timeline">
-                <TabsList>
-                  <TabsTrigger value="timeline">Timeline</TabsTrigger>
-                  <TabsTrigger value="events">
-                    Events ({videoResults.events.length})
-                  </TabsTrigger>
-                </TabsList>
-                <TabsContent value="timeline">
-                  <MotionTimeline
-                    motionSignal={videoResults.motion_signal}
-                    events={videoResults.events}
-                    videoDuration={
-                      videoResults.video_info?.duration_sec || 3600
-                    }
-                    onSeek={handleSeek}
-                    currentTime={currentTime}
-                    hrData={hrResponse?.readings ?? null}
-                    videoStartEpoch={
-                      videoResults.video?.start_local
-                        ? new Date(videoResults.video.start_local).getTime() /
-                          1000
-                        : null
-                    }
-                  />
-                </TabsContent>
-                <TabsContent value="events">
-                  <EventTable
-                    events={videoResults.events}
-                    currentTime={currentTime}
-                    onSeek={handleSeek}
-                  />
-                </TabsContent>
-              </Tabs>
-            </>
-          ) : (
-            <div className="flex items-center justify-center py-12 text-muted-foreground">
-              Loading video results...
-            </div>
-          )}
-        </div>
-      )}
+              return (
+                <TableRow
+                  key={night.night_date}
+                  className="cursor-pointer"
+                  onClick={() => navigate(`/nights/${night.night_date}`)}
+                >
+                  <TableCell className="font-medium">
+                    {formatDate(night.night_date)}
+                  </TableCell>
+                  <TableCell>
+                    {s ? <PlmiBadge value={s.plmi} showLabel /> : "-"}
+                  </TableCell>
+                  <TableCell className="tabular-nums">
+                    {s?.plm_count ?? "-"}
+                  </TableCell>
+                  <TableCell className="tabular-nums">
+                    {s?.series_count ?? "-"}
+                  </TableCell>
+                  <TableCell className="tabular-nums">
+                    {s?.body_movements ?? "-"}
+                  </TableCell>
+                  <TableCell className="tabular-nums">
+                    {formatDuration(night.total_hours)}
+                  </TableCell>
+                  <TableCell className="tabular-nums text-muted-foreground">
+                    {formatClockTime(night.start_local)}-
+                    {formatClockTime(night.end_local)}
+                  </TableCell>
+                  <TableCell>
+                    {night.arousal_summary ? (
+                      <Badge variant="secondary" className="text-[10px]">
+                        {night.arousal_summary.arousal_percentage}%
+                      </Badge>
+                    ) : (
+                      <span className="text-muted-foreground">-</span>
+                    )}
+                  </TableCell>
+                  <TableCell>
+                    {s ? (
+                      <Badge
+                        variant="secondary"
+                        className="bg-severity-normal/15 text-severity-normal text-[10px]"
+                      >
+                        Analyzed
+                      </Badge>
+                    ) : isProcessing ? (
+                      <Badge variant="secondary" className="text-[10px]">
+                        <Spinner className="mr-1" />
+                        Processing
+                      </Badge>
+                    ) : (
+                      <Badge variant="outline" className="text-[10px]">
+                        Pending
+                      </Badge>
+                    )}
+                  </TableCell>
+                </TableRow>
+              )
+            })}
+          </TableBody>
+        </Table>
+      </div>
     </div>
   )
 }

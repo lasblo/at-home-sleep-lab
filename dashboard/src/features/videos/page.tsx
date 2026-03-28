@@ -1,14 +1,17 @@
 import { useState } from "react"
+import { useNavigate } from "react-router-dom"
 import { useVideos } from "./hooks/use-videos"
 import { useProcessing } from "@/features/processing/hooks/use-processing"
 import { PageHeader } from "@/shared/components/page-header"
 import { ProcessButton } from "@/features/processing/components/process-button"
 import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card"
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
 import { Progress } from "@/components/ui/progress"
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
@@ -20,12 +23,13 @@ import {
   EmptyTitle,
   EmptyDescription,
 } from "@/components/ui/empty"
-import { Video } from "lucide-react"
+import { Video, ExternalLink } from "lucide-react"
 import { formatClockTime, formatDuration } from "@/shared/lib/utils"
 
 type Filter = "all" | "processed" | "pending"
 
 export default function VideosPage() {
+  const navigate = useNavigate()
   const { data: videos, isLoading } = useVideos()
   const { status } = useProcessing()
   const [filter, setFilter] = useState<Filter>("all")
@@ -34,11 +38,7 @@ export default function VideosPage() {
     return (
       <div className="flex flex-col gap-6 p-6">
         <Skeleton className="h-8 w-48" />
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
-          {Array.from({ length: 6 }).map((_, i) => (
-            <Skeleton key={i} className="h-24" />
-          ))}
-        </div>
+        <Skeleton className="h-[400px]" />
       </div>
     )
   }
@@ -77,7 +77,7 @@ export default function VideosPage() {
     <div className="flex flex-col gap-6 p-6">
       <PageHeader
         title="Videos"
-        description={`${videos.length} videos (${processedCount} processed, ${pendingCount} pending)`}
+        description={`${videos.length} videos \u00b7 ${processedCount} processed \u00b7 ${pendingCount} pending`}
       >
         <ProcessButton />
       </PageHeader>
@@ -97,50 +97,83 @@ export default function VideosPage() {
         </ToggleGroupItem>
       </ToggleGroup>
 
-      <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
-        {filtered.map((v) => {
-          const progress = status?.progress?.[v.id]
-          const isVideoProcessing =
-            status?.running && progress != null && progress < 1
+      <div className="rounded-md border">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Time Range</TableHead>
+              <TableHead>Duration</TableHead>
+              <TableHead>Date</TableHead>
+              <TableHead>ID</TableHead>
+              <TableHead>Status</TableHead>
+              <TableHead className="w-[40px]" />
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {filtered.map((v) => {
+              const progress = status?.progress?.[v.id]
+              const isVideoProcessing =
+                status?.running && progress != null && progress < 1
 
-          return (
-            <Card key={v.id}>
-              <CardHeader className="pb-2">
-                <div className="flex items-center justify-between">
-                  <CardTitle className="text-xs tabular-nums truncate">
+              return (
+                <TableRow
+                  key={v.id}
+                  className="cursor-pointer"
+                  onClick={() =>
+                    v.processed
+                      ? navigate(`/videos/${v.id}`)
+                      : undefined
+                  }
+                >
+                  <TableCell className="font-medium tabular-nums">
                     {formatClockTime(v.start_local)} -{" "}
                     {formatClockTime(v.end_local)}
-                  </CardTitle>
-                  {v.processed ? (
-                    <Badge variant="secondary" className="text-[10px]">
-                      Processed
-                    </Badge>
-                  ) : isVideoProcessing ? (
-                    <Badge className="text-[10px]">
-                      Processing
-                    </Badge>
-                  ) : (
-                    <Badge variant="outline" className="text-[10px]">
-                      Pending
-                    </Badge>
-                  )}
-                </div>
-              </CardHeader>
-              <CardContent>
-                <div className="flex items-center gap-3 text-xs text-muted-foreground">
-                  <span>{formatDuration(v.duration_sec / 3600)}</span>
-                  <span className="truncate text-[10px]">{v.id}</span>
-                </div>
-                {isVideoProcessing && progress != null && (
-                  <Progress
-                    value={progress * 100}
-                    className="mt-2 h-1"
-                  />
-                )}
-              </CardContent>
-            </Card>
-          )
-        })}
+                  </TableCell>
+                  <TableCell className="tabular-nums">
+                    {formatDuration(v.duration_sec / 3600)}
+                  </TableCell>
+                  <TableCell className="text-muted-foreground">
+                    {v.start_local?.slice(0, 10)}
+                  </TableCell>
+                  <TableCell className="font-mono text-xs text-muted-foreground">
+                    {v.id}
+                  </TableCell>
+                  <TableCell>
+                    {v.processed ? (
+                      <Badge
+                        variant="secondary"
+                        className="bg-severity-normal/15 text-severity-normal text-[10px]"
+                      >
+                        Analyzed
+                      </Badge>
+                    ) : isVideoProcessing ? (
+                      <div className="flex flex-col gap-1">
+                        <Badge variant="secondary" className="text-[10px]">
+                          Processing
+                        </Badge>
+                        {progress != null && (
+                          <Progress
+                            value={progress * 100}
+                            className="h-1 w-20"
+                          />
+                        )}
+                      </div>
+                    ) : (
+                      <Badge variant="outline" className="text-[10px]">
+                        Pending
+                      </Badge>
+                    )}
+                  </TableCell>
+                  <TableCell>
+                    {v.processed && (
+                      <ExternalLink className="size-3.5 text-muted-foreground" />
+                    )}
+                  </TableCell>
+                </TableRow>
+              )
+            })}
+          </TableBody>
+        </Table>
       </div>
     </div>
   )

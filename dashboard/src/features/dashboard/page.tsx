@@ -1,3 +1,4 @@
+import { useNavigate } from "react-router-dom"
 import { useNights } from "./hooks/use-nights"
 import { useDashboardStats } from "./hooks/use-dashboard-stats"
 import { useProcessing } from "@/features/processing/hooks/use-processing"
@@ -7,9 +8,8 @@ import { StatsOverview } from "./components/stats-overview"
 import { PlmiTrendChart } from "./components/plmi-trend-chart"
 import { MetricChart } from "./components/metric-chart"
 import { HourlyHeatmap } from "./components/hourly-heatmap"
-import { NightsGrid } from "./components/nights-grid"
 import { StatCard } from "@/shared/components/stat-card"
-import { Separator } from "@/components/ui/separator"
+import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 import {
   Empty,
@@ -18,21 +18,18 @@ import {
   EmptyTitle,
   EmptyDescription,
 } from "@/components/ui/empty"
-import { Video } from "lucide-react"
+import { Video, ArrowRight } from "lucide-react"
 import { formatDate } from "@/shared/lib/utils"
 
 export default function DashboardPage() {
+  const navigate = useNavigate()
   const { data: nights, isLoading } = useNights()
-  const { status } = useProcessing()
   const stats = useDashboardStats(nights ?? [])
 
   if (isLoading) {
     return (
       <div className="flex flex-col gap-6 p-6">
-        <div className="flex items-center justify-between">
-          <Skeleton className="h-8 w-48" />
-          <Skeleton className="h-9 w-40" />
-        </div>
+        <Skeleton className="h-8 w-48" />
         <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-6">
           {Array.from({ length: 6 }).map((_, i) => (
             <Skeleton key={i} className="h-24" />
@@ -54,10 +51,10 @@ export default function DashboardPage() {
             <Video />
           </EmptyMedia>
           <EmptyHeader>
-            <EmptyTitle>No videos found</EmptyTitle>
+            <EmptyTitle>No data yet</EmptyTitle>
             <EmptyDescription>
-              Add MP4 files to the videos/ directory and click Process All
-              Videos.
+              Add MP4 files to the videos/ directory and process them to see
+              your sleep analysis dashboard.
             </EmptyDescription>
           </EmptyHeader>
         </Empty>
@@ -71,50 +68,33 @@ export default function DashboardPage() {
         <PageHeader title="Dashboard">
           <ProcessButton />
         </PageHeader>
-        <NightsGrid nights={nights} processing={status ?? undefined} />
+        <Empty className="min-h-[300px]">
+          <EmptyHeader>
+            <EmptyTitle>No processed nights</EmptyTitle>
+            <EmptyDescription>
+              {nights.length} night{nights.length !== 1 && "s"} found but none
+              processed yet. Click Process All Videos to start.
+            </EmptyDescription>
+          </EmptyHeader>
+        </Empty>
       </div>
     )
   }
 
   return (
     <div className="flex flex-col gap-6 p-6">
-      <PageHeader title="Dashboard">
+      <PageHeader title="Dashboard" description="Sleep health overview">
         <ProcessButton />
       </PageHeader>
 
+      {/* Key metrics */}
       <StatsOverview stats={stats} />
 
-      {/* Charts grid */}
+      {/* Primary trend chart */}
+      <PlmiTrendChart data={stats.chartData} />
+
+      {/* Secondary charts */}
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-        <PlmiTrendChart data={stats.chartData} />
-
-        {stats.hasArousalData && stats.arousalChartData.length > 0 && (
-          <MetricChart
-            title="PLMAI Trend"
-            description="PLM Arousal Index"
-            data={stats.arousalChartData}
-            dataKey="plmai"
-            color="var(--color-chart-3)"
-            className="col-span-full"
-          />
-        )}
-
-        <MetricChart
-          title="PLM Count"
-          data={stats.chartData}
-          dataKey="plmCount"
-          color="var(--color-chart-2)"
-          type="bar"
-          formatValue={(v) => v.toFixed(0)}
-        />
-        <MetricChart
-          title="Series per Night"
-          data={stats.chartData}
-          dataKey="series"
-          color="var(--color-chart-4)"
-          type="bar"
-          formatValue={(v) => v.toFixed(0)}
-        />
         <MetricChart
           title="Sleep Duration"
           data={stats.chartData}
@@ -123,39 +103,37 @@ export default function DashboardPage() {
           formatValue={(v) => `${v.toFixed(1)}h`}
         />
         <MetricChart
-          title="Body Movements"
+          title="PLM Count"
           data={stats.chartData}
-          dataKey="body"
+          dataKey="plmCount"
           color="var(--color-chart-2)"
           type="bar"
           formatValue={(v) => v.toFixed(0)}
         />
-
-        <HourlyHeatmap nights={nights} />
+        {stats.hasArousalData && stats.arousalChartData.length > 0 && (
+          <MetricChart
+            title="PLMAI Trend"
+            description="PLM Arousal Index"
+            data={stats.arousalChartData}
+            dataKey="plmai"
+            color="var(--color-chart-3)"
+          />
+        )}
+        <MetricChart
+          title="Series per Night"
+          data={stats.chartData}
+          dataKey="series"
+          color="var(--color-chart-4)"
+          type="bar"
+          formatValue={(v) => v.toFixed(0)}
+        />
       </div>
 
-      {/* Secondary stats */}
-      <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-6">
-        <StatCard
-          label="Total PLMs"
-          value={stats.totalPLMs.toLocaleString()}
-          description={`across ${stats.nightsAnalyzed} nights`}
-        />
-        <StatCard
-          label="Total Series"
-          value={stats.totalSeries.toString()}
-          description={`avg ${stats.avgPLMsPerSeries.toFixed(1)} PLMs/series`}
-        />
-        <StatCard
-          label="Body Movements"
-          value={stats.totalBody.toString()}
-          description={`avg ${(stats.totalBody / stats.nightsAnalyzed).toFixed(0)}/night`}
-        />
-        <StatCard
-          label="Movement Rate"
-          value={`${stats.avgMovementIntensity.toFixed(1)}/h`}
-          description="all events per hour"
-        />
+      {/* Hourly pattern */}
+      <HourlyHeatmap nights={nights} />
+
+      {/* Aggregate stats */}
+      <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-4">
         <StatCard
           label="Best Night"
           value={`${stats.minPLMI.toFixed(1)} PLMI`}
@@ -168,35 +146,34 @@ export default function DashboardPage() {
           description={stats.worstNight ? formatDate(stats.worstNight) : ""}
           valueClassName="text-severity-severe"
         />
+        <StatCard
+          label="Total PLMs"
+          value={stats.totalPLMs.toLocaleString()}
+          description={`${stats.totalSeries} series total`}
+        />
+        <StatCard
+          label="Movement Rate"
+          value={`${stats.avgMovementIntensity.toFixed(1)}/h`}
+          description="avg events per hour"
+        />
       </div>
 
-      {stats.hasArousalData && (
-        <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-4">
-          <StatCard
-            label="Avg Arousal %"
-            value={`${stats.avgArousalPct?.toFixed(0) ?? "-"}%`}
-            description={
-              (stats.avgArousalPct ?? 0) > 50
-                ? "majority disruptive"
-                : "some subclinical"
-            }
-          />
-          <StatCard
-            label="Avg HR Spike"
-            value={`${stats.avgArousalMag?.toFixed(1) ?? "-"} bpm`}
-            description="mean arousal magnitude"
-          />
-        </div>
-      )}
-
-      <Separator />
-
-      {/* All nights */}
-      <div>
-        <h2 className="mb-3 text-sm font-medium text-muted-foreground uppercase tracking-wide">
-          All Nights
-        </h2>
-        <NightsGrid nights={nights} processing={status ?? undefined} />
+      {/* Quick links */}
+      <div className="flex flex-wrap gap-3">
+        <Button variant="outline" onClick={() => navigate("/nights")}>
+          Browse all nights
+          <ArrowRight data-icon="inline-end" />
+        </Button>
+        <Button variant="outline" onClick={() => navigate("/videos")}>
+          Manage videos
+          <ArrowRight data-icon="inline-end" />
+        </Button>
+        {stats.hasArousalData && (
+          <Button variant="outline" onClick={() => navigate("/heart-rate")}>
+            Heart rate analysis
+            <ArrowRight data-icon="inline-end" />
+          </Button>
+        )}
       </div>
     </div>
   )

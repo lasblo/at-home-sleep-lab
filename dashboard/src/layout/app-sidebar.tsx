@@ -3,6 +3,7 @@ import {
   LayoutDashboard,
   MoonStar,
   Video,
+  Heart,
   Settings,
   Sun,
   Moon,
@@ -34,8 +35,9 @@ const NAV_ITEMS = [
   {
     group: "Analysis",
     items: [
-      { label: "Nights", icon: MoonStar, href: "/" },
+      { label: "Nights", icon: MoonStar, href: "/nights" },
       { label: "Videos", icon: Video, href: "/videos" },
+      { label: "Heart Rate", icon: Heart, href: "/heart-rate" },
     ],
   },
   {
@@ -45,6 +47,11 @@ const NAV_ITEMS = [
     ],
   },
 ]
+
+function isActive(pathname: string, href: string): boolean {
+  if (href === "/") return pathname === "/"
+  return pathname.startsWith(href)
+}
 
 export function AppSidebar() {
   const location = useLocation()
@@ -84,7 +91,7 @@ export function AppSidebar() {
               {group.items.map((item) => (
                 <SidebarMenuItem key={item.label}>
                   <SidebarMenuButton
-                    isActive={location.pathname === item.href}
+                    isActive={isActive(location.pathname, item.href)}
                     onClick={() => navigate(item.href)}
                     tooltip={item.label}
                   >

@@ -7,40 +7,29 @@ import {
   BreadcrumbPage,
   BreadcrumbSeparator,
 } from "@/components/ui/breadcrumb"
-
-function formatNightDate(date: string): string {
-  try {
-    const d = new Date(date + "T12:00:00")
-    return d.toLocaleDateString("en-US", {
-      weekday: "short",
-      month: "short",
-      day: "numeric",
-      year: "numeric",
-    })
-  } catch {
-    return date
-  }
-}
+import { formatDate } from "@/shared/lib/utils"
 
 export function BreadcrumbNav() {
   const location = useLocation()
   const navigate = useNavigate()
   const params = useParams()
 
-  const crumbs: { label: string; href?: string }[] = [
-    { label: "Dashboard", href: "/" },
-  ]
+  const crumbs: { label: string; href?: string }[] = []
 
-  if (location.pathname.startsWith("/nights") && params.date) {
-    crumbs.push({
-      label: formatNightDate(params.date),
-      href: params.videoId ? `/nights/${params.date}` : undefined,
-    })
+  if (location.pathname === "/") {
+    crumbs.push({ label: "Dashboard" })
+  } else if (location.pathname.startsWith("/nights")) {
+    crumbs.push({ label: "Nights", href: "/nights" })
+    if (params.date) {
+      crumbs.push({ label: formatDate(params.date) })
+    }
+  } else if (location.pathname.startsWith("/videos")) {
+    crumbs.push({ label: "Videos", href: "/videos" })
     if (params.videoId) {
       crumbs.push({ label: "Video Review" })
     }
-  } else if (location.pathname === "/videos") {
-    crumbs.push({ label: "Videos" })
+  } else if (location.pathname === "/heart-rate") {
+    crumbs.push({ label: "Heart Rate" })
   } else if (location.pathname === "/settings") {
     crumbs.push({ label: "Settings" })
   }
