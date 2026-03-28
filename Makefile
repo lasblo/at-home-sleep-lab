@@ -1,4 +1,4 @@
-.PHONY: up dev down ble logs
+.PHONY: up dev down nuke ble logs
 
 up:
 	docker compose up -d
@@ -8,6 +8,10 @@ dev:
 
 down:
 	docker compose down
+
+nuke:
+	docker compose -f compose.dev.yml down -v
+	docker compose -f compose.dev.yml up -d
 
 ble:
 	@test -d .venv || (echo "Error: .venv not found. Run: python3 -m venv .venv && .venv/bin/pip install bleak fastapi uvicorn" && exit 1)
