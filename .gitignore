@@ -3,6 +3,6 @@ node_modules/
 output/
 __pycache__/
 *.pyc
-videos/
+/videos/
 .DS_Store
 swift-motion/

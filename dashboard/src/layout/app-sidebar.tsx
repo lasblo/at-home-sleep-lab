@@ -1,0 +1,126 @@
+import { useLocation, useNavigate } from "react-router-dom"
+import {
+  LayoutDashboard,
+  MoonStar,
+  Video,
+  Settings,
+  Sun,
+  Moon,
+  Monitor,
+} from "lucide-react"
+import {
+  Sidebar,
+  SidebarContent,
+  SidebarFooter,
+  SidebarGroup,
+  SidebarGroupLabel,
+  SidebarHeader,
+  SidebarMenu,
+  SidebarMenuButton,
+  SidebarMenuItem,
+} from "@/components/ui/sidebar"
+import { ProcessingIndicator } from "@/features/processing/components/processing-indicator"
+import { useTheme } from "@/components/theme-provider"
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
+import { Separator } from "@/components/ui/separator"
+
+const NAV_ITEMS = [
+  {
+    group: "Overview",
+    items: [
+      { label: "Dashboard", icon: LayoutDashboard, href: "/" },
+    ],
+  },
+  {
+    group: "Analysis",
+    items: [
+      { label: "Nights", icon: MoonStar, href: "/" },
+      { label: "Videos", icon: Video, href: "/videos" },
+    ],
+  },
+  {
+    group: "System",
+    items: [
+      { label: "Settings", icon: Settings, href: "/settings" },
+    ],
+  },
+]
+
+export function AppSidebar() {
+  const location = useLocation()
+  const navigate = useNavigate()
+  const { theme, setTheme } = useTheme()
+
+  return (
+    <Sidebar>
+      <SidebarHeader>
+        <SidebarMenu>
+          <SidebarMenuItem>
+            <SidebarMenuButton
+              size="lg"
+              onClick={() => navigate("/")}
+              className="cursor-pointer"
+            >
+              <div className="flex items-center gap-2">
+                <div className="flex size-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
+                  <MoonStar className="size-4" />
+                </div>
+                <div className="flex flex-col gap-0.5 leading-none">
+                  <span className="font-semibold">Sleep Lab</span>
+                  <span className="text-xs text-muted-foreground">
+                    PLMS Detector
+                  </span>
+                </div>
+              </div>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+        </SidebarMenu>
+      </SidebarHeader>
+      <SidebarContent>
+        {NAV_ITEMS.map((group) => (
+          <SidebarGroup key={group.group}>
+            <SidebarGroupLabel>{group.group}</SidebarGroupLabel>
+            <SidebarMenu>
+              {group.items.map((item) => (
+                <SidebarMenuItem key={item.label}>
+                  <SidebarMenuButton
+                    isActive={location.pathname === item.href}
+                    onClick={() => navigate(item.href)}
+                    tooltip={item.label}
+                  >
+                    <item.icon />
+                    <span>{item.label}</span>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              ))}
+            </SidebarMenu>
+          </SidebarGroup>
+        ))}
+      </SidebarContent>
+      <SidebarFooter>
+        <ProcessingIndicator />
+        <Separator />
+        <div className="flex items-center justify-center p-2">
+          <ToggleGroup
+            type="single"
+            value={theme}
+            onValueChange={(value) => {
+              if (value) setTheme(value as "light" | "dark" | "system")
+            }}
+            size="sm"
+          >
+            <ToggleGroupItem value="light" aria-label="Light theme">
+              <Sun />
+            </ToggleGroupItem>
+            <ToggleGroupItem value="dark" aria-label="Dark theme">
+              <Moon />
+            </ToggleGroupItem>
+            <ToggleGroupItem value="system" aria-label="System theme">
+              <Monitor />
+            </ToggleGroupItem>
+          </ToggleGroup>
+        </div>
+      </SidebarFooter>
+    </Sidebar>
+  )
+}
