@@ -500,11 +500,21 @@ async def list_sessions() -> list[dict]:
 
 
 async def update_session(session_id: str, **kwargs):
+    from datetime import datetime, date
     pool = await get_pool()
+
+    # Columns that need datetime/date conversion from ISO strings
+    ts_cols = {"started_at", "stopped_at", "created_at"}
+    date_cols = {"night_date"}
+
     sets = []
     vals = [session_id]
     i = 2
     for k, v in kwargs.items():
+        if isinstance(v, str) and k in ts_cols:
+            v = datetime.fromisoformat(v)
+        elif isinstance(v, str) and k in date_cols:
+            v = date.fromisoformat(v)
         sets.append(f"{k} = ${i}")
         vals.append(v)
         i += 1
