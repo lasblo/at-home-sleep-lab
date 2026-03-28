@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
+import { Alert, AlertDescription } from "@/components/ui/alert"
 import {
   Card,
   CardContent,
@@ -35,6 +36,17 @@ export function WhoopCard() {
       return res.json()
     },
   })
+
+  const { data: bleSettings } = useQuery({
+    queryKey: ["settings", "bluetooth"],
+    queryFn: async () => {
+      const res = await fetch("/api/settings/bluetooth")
+      if (!res.ok) return null
+      return res.json()
+    },
+  })
+
+  const bleConfigured = !!bleSettings?.url
 
   const [editing, setEditing] = useState(false)
   const [devices, setDevices] = useState<Array<{ address: string; name: string }>>([])
@@ -164,13 +176,21 @@ export function WhoopCard() {
       ) : (
         <>
           <CardContent className="flex flex-col gap-4">
+            {!bleConfigured && (
+              <Alert>
+                <AlertDescription>
+                  Configure Bluetooth above first to scan for WHOOP devices.
+                </AlertDescription>
+              </Alert>
+            )}
+
             {/* Step 1: Discover */}
             <div className="flex items-center gap-3">
               <Button
                 variant="outline"
                 size="sm"
                 onClick={() => discover.mutate()}
-                disabled={discover.isPending}
+                disabled={!bleConfigured || discover.isPending}
               >
                 {discover.isPending ? <Spinner data-icon="inline-start" /> : null}
                 Scan for Devices
