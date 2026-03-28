@@ -19,7 +19,20 @@ import { formatFullDate, formatDuration, formatClockTime } from "@/shared/lib/ut
 export default function SessionDetailPage() {
   const { sessionId } = useParams<{ sessionId: string }>()
   const navigate = useNavigate()
-  const { data: session, isLoading, isError, refetch } = useSessionDetail(sessionId)
+  const { data: session, isLoading, isError, error, refetch } = useSessionDetail(sessionId)
+
+  if (isError) {
+    return error?.message === "not_found" ? (
+      <NotFound
+        title="Session not found"
+        description="This session doesn't exist or has been deleted."
+        backTo="/sessions"
+        backLabel="Back to sessions"
+      />
+    ) : (
+      <ErrorState title="Failed to load session" retry={refetch} />
+    )
+  }
 
   if (isLoading) {
     return (
@@ -31,20 +44,7 @@ export default function SessionDetailPage() {
     )
   }
 
-  if (isError) {
-    return <ErrorState title="Failed to load session" retry={refetch} />
-  }
-
-  if (!session) {
-    return (
-      <NotFound
-        title="Session not found"
-        description="This session doesn't exist or has been deleted."
-        backTo="/sessions"
-        backLabel="Back to sessions"
-      />
-    )
-  }
+  if (!session) return null
 
   const isRecording = session.status === "recording"
 

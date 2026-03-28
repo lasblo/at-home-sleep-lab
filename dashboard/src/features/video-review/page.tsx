@@ -23,7 +23,7 @@ import { formatClockTime } from "@/shared/lib/utils"
 
 export default function VideoReviewPage() {
   const { videoId } = useParams<{ videoId: string }>()
-  const { data: results, isLoading, isError, refetch } = useVideoResults(videoId)
+  const { data: results, isLoading, isError, error, refetch } = useVideoResults(videoId)
   const { reanalyze, status } = useProcessing()
 
   const { data: hrResponse } = useHeartRate(
@@ -51,19 +51,19 @@ export default function VideoReviewPage() {
   }
 
   if (isError) {
-    return <ErrorState title="Failed to load video" retry={refetch} />
-  }
-
-  if (!results) {
-    return (
+    return error?.message === "not_found" ? (
       <NotFound
         title="Video not found"
         description="This video has not been processed yet or does not exist."
         backTo="/sessions"
         backLabel="Back to sessions"
       />
+    ) : (
+      <ErrorState title="Failed to load video" retry={refetch} />
     )
   }
+
+  if (!results) return null
 
   const title = results.video
     ? `${formatClockTime(results.video.start_local)} - ${formatClockTime(results.video.end_local)}`

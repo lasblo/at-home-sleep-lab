@@ -6,9 +6,13 @@ export function useVideoResults(videoId: string | undefined) {
     queryKey: ["results", videoId],
     queryFn: async () => {
       const res = await fetch(`/api/results/${videoId}`)
-      if (!res.ok) throw new Error("Failed to fetch video results")
+      if (!res.ok) throw new Error(res.status === 404 ? "not_found" : "Failed to fetch video results")
       return res.json()
     },
     enabled: !!videoId,
+    retry: (count, error) => {
+      if (error.message === "not_found") return false
+      return count < 2
+    },
   })
 }
