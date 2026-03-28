@@ -35,6 +35,10 @@ export function VideoSelector({
             <SelectItem key={video.id} value={video.id}>
               <div className="flex items-center gap-2">
                 <span>
+                  {new Date(video.start_local).toLocaleDateString("en-US", {
+                    month: "short",
+                    day: "numeric",
+                  })}{" "}
                   {formatClockTime(video.start_local)} –{" "}
                   {formatClockTime(video.end_local)}
                 </span>

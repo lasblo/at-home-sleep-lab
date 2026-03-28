@@ -186,6 +186,75 @@ async def serve_video(filename: str, request: Request):
     return FileResponse(path, media_type="video/mp4")
 
 
+# ── Video Scanning ─────────────────────────────────────────────────
+
+
+def _parse_unifi_filename(filename: str) -> dict | None:
+    """Parse UniFi-style filename into timestamps.
+
+    Format: 'Full Body M-D-YYYY, HH.MM.SS GMT+1 - M-D-YYYY, HH.MM.SS GMT+1.mp4'
+    """
+    import hashlib
+    from datetime import timezone, timedelta
+    from zoneinfo import ZoneInfo
+
+    pattern = (
+        r"Full Body "
+        r"(\d{1,2})-(\d{1,2})-(\d{4}), (\d{2})\.(\d{2})\.(\d{2}) GMT\+(\d+)"
+        r" - "
+        r"(\d{1,2})-(\d{1,2})-(\d{4}), (\d{2})\.(\d{2})\.(\d{2}) GMT\+(\d+)"
+    )
+    m = re.match(pattern, filename.replace(".mp4", ""))
+    if not m:
+        return None
+    g = [int(x) for x in m.groups()]
+    tz_start = timezone(timedelta(hours=g[6]))
+    tz_end = timezone(timedelta(hours=g[13]))
+    start = datetime(g[2], g[0], g[1], g[3], g[4], g[5], tzinfo=tz_start)
+    end = datetime(g[9], g[7], g[8], g[10], g[11], g[12], tzinfo=tz_end)
+    start_utc = start.astimezone(timezone.utc)
+    end_utc = end.astimezone(timezone.utc)
+    local_tz = ZoneInfo("Europe/Copenhagen")
+    start_local = start.astimezone(local_tz)
+    end_local = end.astimezone(local_tz)
+    duration_sec = (end_utc - start_utc).total_seconds()
+    video_id = hashlib.sha256(filename.encode()).hexdigest()[:12]
+    return {
+        "id": video_id,
+        "filename": filename,
+        "start_utc": start_utc,
+        "end_utc": end_utc,
+        "start_local": start_local,
+        "end_local": end_local,
+        "duration_sec": duration_sec,
+    }
+
+
+@app.post("/api/videos/scan")
+async def scan_videos():
+    """Scan VIDEOS_DIR for .mp4 files and register them in the database."""
+    mp4_files = sorted(VIDEOS_DIR.glob("*.mp4"))
+    existing = {v["filename"] for v in await db.list_videos()}
+    added = []
+    for path in mp4_files:
+        if path.name in existing:
+            continue
+        parsed = _parse_unifi_filename(path.name)
+        if not parsed:
+            continue
+        await db.insert_video(
+            video_id=parsed["id"],
+            filename=parsed["filename"],
+            start_utc=parsed["start_utc"],
+            end_utc=parsed["end_utc"],
+            start_local=parsed["start_local"],
+            end_local=parsed["end_local"],
+            duration_sec=parsed["duration_sec"],
+        )
+        added.append(parsed["filename"])
+    return {"scanned": len(mp4_files), "added": len(added), "files": added}
+
+
 # ── Results (video analysis) ───────────────────────────────────────
 
 
