@@ -44,12 +44,15 @@ export default function SettingsPage() {
     },
   })
 
+  const [editing, setEditing] = useState(false)
   const [unifiHost, setUnifiHost] = useState("")
   const [unifiUser, setUnifiUser] = useState("")
   const [unifiPass, setUnifiPass] = useState("")
   const [selectedCamera, setSelectedCamera] = useState("")
   const [cameras, setCameras] = useState<UniFiCamera[]>([])
   const [testResult, setTestResult] = useState<"ok" | "fail" | null>(null)
+
+  const isConfigured = !!(unifiSettings?.host && unifiSettings?.camera_id)
 
   useEffect(() => {
     if (unifiSettings) {
@@ -158,126 +161,170 @@ export default function SettingsPage() {
     <div className="flex flex-col gap-6 p-6">
       <PageHeader title="Settings" />
 
-      {/* UniFi Protect setup */}
+      {/* UniFi Protect */}
       <Card>
         <CardHeader>
           <CardTitle>UniFi Protect</CardTitle>
           <CardDescription>
-            Connect to your UniFi Protect NVR to automatically fetch sleep
-            recordings from your IR camera.
+            {isConfigured && !editing
+              ? "Connected to your UniFi Protect NVR."
+              : "Connect to your UniFi Protect NVR to automatically fetch sleep recordings."}
           </CardDescription>
         </CardHeader>
-        <CardContent className="flex flex-col gap-4">
-          <div className="flex flex-col gap-2">
-            <Label htmlFor="unifi-host">NVR Address</Label>
-            <Input
-              id="unifi-host"
-              placeholder="192.168.1.1"
-              value={unifiHost}
-              onChange={(e) => { setUnifiHost(e.target.value.replace(/^https?:\/\//, "")); setTestResult(null) }}
-            />
-          </div>
-          <div className="grid grid-cols-2 gap-4">
-            <div className="flex flex-col gap-2">
-              <Label htmlFor="unifi-user">Username</Label>
-              <Input
-                id="unifi-user"
-                placeholder="admin"
-                value={unifiUser}
-                onChange={(e) => setUnifiUser(e.target.value)}
-              />
-            </div>
-            <div className="flex flex-col gap-2">
-              <Label htmlFor="unifi-pass">Password</Label>
-              <Input
-                id="unifi-pass"
-                type="password"
-                value={unifiPass}
-                onChange={(e) => setUnifiPass(e.target.value)}
-              />
-            </div>
-          </div>
 
-          {/* Step 1: Test connection */}
-          <div className="flex items-center gap-3">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => testConnection.mutate()}
-              disabled={!unifiHost || !unifiUser || !unifiPass || testConnection.isPending}
-            >
-              {testConnection.isPending ? <Spinner data-icon="inline-start" /> : null}
-              Test Connection
-            </Button>
-            {testResult === "ok" && (
-              <Badge variant="secondary" className="bg-severity-normal/15 text-severity-normal">
-                <CheckCircle2 className="mr-0.5" />
-                Connected
-              </Badge>
-            )}
-            {testResult === "fail" && (
-              <Badge variant="destructive">
-                <XCircle className="mr-0.5" />
-                Failed
-              </Badge>
-            )}
-          </div>
-
-          {/* Step 2: Select camera */}
-          {testResult === "ok" && (
-            <>
-              <Separator />
-              <div className="flex items-end gap-3">
-                <div className="flex flex-1 flex-col gap-2">
-                  <Label>Camera</Label>
-                  {cameras.length > 0 ? (
-                    <Select value={selectedCamera} onValueChange={setSelectedCamera}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select a camera" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectGroup>
-                          {cameras.map((c) => (
-                            <SelectItem key={c.id} value={c.id}>
-                              <div className="flex items-center gap-2">
-                                <Video className="size-3.5" />
-                                {c.name}
-                                {!c.is_connected && (
-                                  <Badge variant="outline" className="text-[10px]">
-                                    Offline
-                                  </Badge>
-                                )}
-                              </div>
-                            </SelectItem>
-                          ))}
-                        </SelectGroup>
-                      </SelectContent>
-                    </Select>
-                  ) : (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => fetchCameras.mutate()}
-                      disabled={fetchCameras.isPending}
-                    >
-                      {fetchCameras.isPending ? <Spinner data-icon="inline-start" /> : null}
-                      Load Cameras
-                    </Button>
-                  )}
+        {isConfigured && !editing ? (
+          /* ── Configured summary ── */
+          <>
+            <CardContent className="flex flex-col gap-3">
+              <div className="flex items-center gap-3">
+                <CheckCircle2 className="size-5 text-severity-normal" />
+                <div className="flex flex-col gap-0.5">
+                  <span className="text-sm font-medium">{unifiSettings.host}</span>
+                  <span className="text-xs text-muted-foreground">
+                    {unifiSettings.username}
+                  </span>
                 </div>
               </div>
-            </>
-          )}
-        </CardContent>
-        <CardFooter>
-          <Button
-            onClick={() => saveUnifi.mutate()}
-            disabled={!unifiHost || !selectedCamera || saveUnifi.isPending}
-          >
-            {saveUnifi.isPending ? <Spinner data-icon="inline-start" /> : null}
-            Save UniFi Settings
-          </Button>
-        </CardFooter>
+              <div className="flex items-center gap-2">
+                <Video className="size-4 text-muted-foreground" />
+                <span className="text-sm">
+                  {unifiSettings.camera_name || unifiSettings.camera_id}
+                </span>
+                <Badge variant="secondary" className="bg-severity-normal/15 text-severity-normal text-[10px]">
+                  Configured
+                </Badge>
+              </div>
+            </CardContent>
+            <CardFooter>
+              <Button variant="outline" size="sm" onClick={() => setEditing(true)}>
+                Reconfigure
+              </Button>
+            </CardFooter>
+          </>
+        ) : (
+          /* ── Setup form ── */
+          <>
+            <CardContent className="flex flex-col gap-4">
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="unifi-host">NVR Address</Label>
+                <Input
+                  id="unifi-host"
+                  placeholder="192.168.1.1"
+                  value={unifiHost}
+                  onChange={(e) => { setUnifiHost(e.target.value.replace(/^https?:\/\//, "")); setTestResult(null) }}
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="flex flex-col gap-2">
+                  <Label htmlFor="unifi-user">Username</Label>
+                  <Input
+                    id="unifi-user"
+                    placeholder="admin"
+                    value={unifiUser}
+                    onChange={(e) => setUnifiUser(e.target.value)}
+                  />
+                </div>
+                <div className="flex flex-col gap-2">
+                  <Label htmlFor="unifi-pass">Password</Label>
+                  <Input
+                    id="unifi-pass"
+                    type="password"
+                    value={unifiPass}
+                    onChange={(e) => setUnifiPass(e.target.value)}
+                  />
+                </div>
+              </div>
+
+              {/* Step 1: Test connection */}
+              <div className="flex items-center gap-3">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => testConnection.mutate()}
+                  disabled={!unifiHost || !unifiUser || !unifiPass || testConnection.isPending}
+                >
+                  {testConnection.isPending ? <Spinner data-icon="inline-start" /> : null}
+                  Test Connection
+                </Button>
+                {testResult === "ok" && (
+                  <Badge variant="secondary" className="bg-severity-normal/15 text-severity-normal">
+                    <CheckCircle2 className="mr-0.5" />
+                    Connected
+                  </Badge>
+                )}
+                {testResult === "fail" && (
+                  <Badge variant="destructive">
+                    <XCircle className="mr-0.5" />
+                    Failed
+                  </Badge>
+                )}
+              </div>
+
+              {/* Step 2: Select camera */}
+              {testResult === "ok" && (
+                <>
+                  <Separator />
+                  <div className="flex items-end gap-3">
+                    <div className="flex flex-1 flex-col gap-2">
+                      <Label>Camera</Label>
+                      {cameras.length > 0 ? (
+                        <Select value={selectedCamera} onValueChange={setSelectedCamera}>
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select a camera" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectGroup>
+                              {cameras.map((c) => (
+                                <SelectItem key={c.id} value={c.id}>
+                                  <div className="flex items-center gap-2">
+                                    <Video className="size-3.5" />
+                                    {c.name}
+                                    {!c.is_connected && (
+                                      <Badge variant="outline" className="text-[10px]">
+                                        Offline
+                                      </Badge>
+                                    )}
+                                  </div>
+                                </SelectItem>
+                              ))}
+                            </SelectGroup>
+                          </SelectContent>
+                        </Select>
+                      ) : (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => fetchCameras.mutate()}
+                          disabled={fetchCameras.isPending}
+                        >
+                          {fetchCameras.isPending ? <Spinner data-icon="inline-start" /> : null}
+                          Load Cameras
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                </>
+              )}
+            </CardContent>
+            <CardFooter className="gap-2">
+              <Button
+                onClick={() => {
+                  saveUnifi.mutate()
+                  setEditing(false)
+                }}
+                disabled={!unifiHost || !selectedCamera || saveUnifi.isPending}
+              >
+                {saveUnifi.isPending ? <Spinner data-icon="inline-start" /> : null}
+                Save
+              </Button>
+              {isConfigured && (
+                <Button variant="outline" onClick={() => setEditing(false)}>
+                  Cancel
+                </Button>
+              )}
+            </CardFooter>
+          </>
+        )}
       </Card>
 
       {/* WHOOP HR */}
