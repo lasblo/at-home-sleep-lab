@@ -82,7 +82,8 @@ async def start_session() -> dict:
 
     whoop_settings = await db.get_setting("whoop") or {}
     hr_enabled = bool(whoop_settings.get("enabled"))
-    ble_url = whoop_settings.get("ble_service_url", "http://host.docker.internal:8001")
+    ble_settings = await db.get_setting("bluetooth") or {}
+    ble_url = ble_settings.get("url", "http://host.docker.internal:8001")
 
     now = datetime.now(timezone.utc)
     session_id = uuid.uuid4().hex[:12]
@@ -160,7 +161,8 @@ async def stop_session() -> dict:
     # --- Stop HR listener and ingest remaining readings ---------------------
     whoop_settings = await db.get_setting("whoop") or {}
     hr_enabled = bool(whoop_settings.get("enabled"))
-    ble_url = whoop_settings.get("ble_service_url", "http://host.docker.internal:8001")
+    ble_settings = await db.get_setting("bluetooth") or {}
+    ble_url = ble_settings.get("url", "http://host.docker.internal:8001")
 
     if hr_enabled:
         try:

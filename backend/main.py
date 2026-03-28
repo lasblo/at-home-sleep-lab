@@ -248,8 +248,8 @@ async def hr_ingest():
 # ── BLE Proxy (forwards to host BLE service) ───────────────────────
 
 async def _ble_url() -> str:
-    settings = await db.get_setting("whoop")
-    return (settings or {}).get("ble_service_url", "http://host.docker.internal:8001")
+    ble_settings = await db.get_setting("bluetooth")
+    return (ble_settings or {}).get("url", "http://host.docker.internal:8001")
 
 
 @app.get("/api/ble/discover")
