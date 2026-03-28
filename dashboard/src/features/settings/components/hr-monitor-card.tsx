@@ -25,10 +25,10 @@ import {
 import { CheckCircle2, Heart } from "lucide-react"
 import { toast } from "sonner"
 
-export function WhoopCard() {
+export function HRMonitorCard() {
   const queryClient = useQueryClient()
 
-  const { data: whoopSettings } = useQuery({
+  const { data: hrSettings } = useQuery({
     queryKey: ["settings", "whoop"],
     queryFn: async () => {
       const res = await fetch("/api/settings/whoop")
@@ -55,14 +55,11 @@ export function WhoopCard() {
   const [selectedDevice, setSelectedDevice] = useState("")
   const [testHr, setTestHr] = useState<number | null>(null)
 
-  const isConfigured = !!(
-    whoopSettings?.enabled && whoopSettings?.device_address
-  )
+  const isConfigured = !!(hrSettings?.enabled && hrSettings?.device_address)
 
   useEffect(() => {
-    if (whoopSettings?.device_address)
-      setSelectedDevice(whoopSettings.device_address)
-  }, [whoopSettings])
+    if (hrSettings?.device_address) setSelectedDevice(hrSettings.device_address)
+  }, [hrSettings])
 
   const discover = useMutation({
     mutationFn: async () => {
@@ -74,7 +71,7 @@ export function WhoopCard() {
         setDevices(data.devices)
         if (data.devices.length === 0)
           toast.info(
-            "No HR devices found. Make sure WHOOP is nearby and awake."
+            "No HR devices found. Make sure your device is nearby and awake."
           )
         else if (data.devices.length === 1)
           setSelectedDevice(data.devices[0].address)
@@ -107,7 +104,7 @@ export function WhoopCard() {
     mutationFn: async () => {
       const deviceName =
         devices.find((d) => d.address === selectedDevice)?.name ||
-        whoopSettings?.device_name ||
+        hrSettings?.device_name ||
         selectedDevice
       const res = await fetch("/api/settings/whoop", {
         method: "PUT",
@@ -121,7 +118,7 @@ export function WhoopCard() {
       return res.json()
     },
     onSuccess: () => {
-      toast.success("WHOOP settings saved")
+      toast.success("HR monitor settings saved")
       setEditing(false)
       queryClient.invalidateQueries({ queryKey: ["settings"] })
     },
@@ -137,7 +134,7 @@ export function WhoopCard() {
       return res.json()
     },
     onSuccess: () => {
-      toast.success("WHOOP disabled")
+      toast.success("HR monitor disabled")
       queryClient.invalidateQueries({ queryKey: ["settings"] })
     },
   })
@@ -145,11 +142,11 @@ export function WhoopCard() {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>WHOOP Heart Rate</CardTitle>
+        <CardTitle>Heart Rate Monitor</CardTitle>
         <CardDescription>
           {isConfigured && !editing
-            ? "WHOOP HR monitoring is enabled for sleep sessions."
-            : "Select your WHOOP band for cardiac arousal detection during sleep."}
+            ? "BLE heart rate monitoring is enabled for sleep sessions."
+            : "Select your BLE heart rate device for cardiac arousal detection during sleep."}
         </CardDescription>
       </CardHeader>
 
@@ -160,10 +157,10 @@ export function WhoopCard() {
               <Heart className="size-5 text-chart-3" />
               <div className="flex flex-col gap-0.5">
                 <span className="text-sm font-medium">
-                  {whoopSettings.device_name || whoopSettings.device_address}
+                  {hrSettings.device_name || hrSettings.device_address}
                 </span>
                 <span className="font-mono text-xs text-muted-foreground">
-                  {whoopSettings.device_address}
+                  {hrSettings.device_address}
                 </span>
               </div>
               <Badge
@@ -198,7 +195,7 @@ export function WhoopCard() {
             {!bleConfigured && (
               <Alert>
                 <AlertDescription>
-                  Configure Bluetooth above first to scan for WHOOP devices.
+                  Configure Bluetooth above first to scan for HR devices.
                 </AlertDescription>
               </Alert>
             )}
@@ -237,7 +234,7 @@ export function WhoopCard() {
                     }}
                   >
                     <SelectTrigger>
-                      <SelectValue placeholder="Select your WHOOP" />
+                      <SelectValue placeholder="Select a device" />
                     </SelectTrigger>
                     <SelectContent>
                       <SelectGroup>

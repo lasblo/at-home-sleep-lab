@@ -29,8 +29,9 @@ import {
   EmptyTitle,
   EmptyDescription,
 } from "@/components/ui/empty"
-import { Heart, Wifi, WifiOff } from "lucide-react"
+import { Heart, Loader2, Wifi, WifiOff } from "lucide-react"
 import { ErrorState } from "@/shared/components/error-state"
+import { useActiveSession } from "@/features/sessions/hooks/use-sessions"
 import { formatDate } from "@/shared/lib/utils"
 import type { DashboardSession } from "@/shared/types/api"
 import {
@@ -236,6 +237,7 @@ function HRRangeChart({ sessions }: { sessions: DashboardSession[] }) {
 export default function HeartRatePage() {
   const navigate = useNavigate()
   const { data: summary, isLoading, isError, refetch } = useDashboardSummary()
+  const { data: activeSession } = useActiveSession()
   const { data: hrStatus } = useQuery({
     queryKey: ["hr", "status"],
     queryFn: async () => {
@@ -282,6 +284,8 @@ export default function HeartRatePage() {
 
   const isConnected =
     hrStatus?.status === "connected" || hrStatus?.status === "streaming"
+  const isConnecting = hrStatus?.status === "connecting"
+  const hasActiveSession = activeSession?.status === "recording"
 
   if (isError) {
     return <ErrorState title="Failed to load heart rate data" retry={refetch} />
@@ -311,7 +315,7 @@ export default function HeartRatePage() {
       {/* Live status */}
       <Card>
         <CardHeader>
-          <CardTitle className="text-sm">WHOOP Status</CardTitle>
+          <CardTitle className="text-sm">HR Monitor Status</CardTitle>
           <CardDescription>
             HR monitoring starts and stops automatically with sleep sessions.
           </CardDescription>
@@ -335,6 +339,14 @@ export default function HeartRatePage() {
                   )}
                 </div>
               </>
+            ) : isConnecting || (hasActiveSession && !isConnected) ? (
+              <>
+                <Loader2 className="size-5 animate-spin text-muted-foreground" />
+                <Badge variant="outline">Connecting</Badge>
+                <span className="text-xs text-muted-foreground">
+                  Session active — waiting for HR device
+                </span>
+              </>
             ) : (
               <>
                 <WifiOff className="size-5 text-muted-foreground" />
@@ -356,8 +368,8 @@ export default function HeartRatePage() {
           <EmptyHeader>
             <EmptyTitle>No heart rate data</EmptyTitle>
             <EmptyDescription>
-              Enable WHOOP in Settings and run a sleep session to collect
-              cardiac arousal data.
+              Enable a BLE heart rate monitor in Settings and run a sleep
+              session to collect cardiac arousal data.
             </EmptyDescription>
           </EmptyHeader>
         </Empty>

@@ -58,7 +58,7 @@ async def start_session() -> dict:
     """Start a new sleep session.
 
     1. Check no active session exists
-    2. Get UniFi + WHOOP settings from DB
+    2. Get UniFi + HR monitor settings from DB
     3. Create session record
     4. Start HR listener if enabled (call BLE service)
     5. Start background hourly video fetch task

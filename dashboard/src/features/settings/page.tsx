@@ -9,7 +9,7 @@ import {
 import { Separator } from "@/components/ui/separator"
 import { UniFiCard } from "./components/unifi-card"
 import { BluetoothCard } from "./components/bluetooth-card"
-import { WhoopCard } from "./components/whoop-card"
+import { HRMonitorCard } from "./components/hr-monitor-card"
 import { ThemeToggle } from "@/shared/components/theme-toggle"
 
 export default function SettingsPage() {
@@ -22,7 +22,7 @@ export default function SettingsPage() {
       <Separator />
 
       <BluetoothCard />
-      <WhoopCard />
+      <HRMonitorCard />
 
       <Separator />
 

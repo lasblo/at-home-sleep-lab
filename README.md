@@ -23,7 +23,7 @@ Sleep Lab turns a UniFi Protect camera and a Bluetooth heart rate monitor into a
 
 ### Cardiac Arousal Detection
 
-- **Real-time heart rate capture** via Bluetooth Low Energy (WHOOP, or any BLE HR monitor)
+- **Real-time heart rate capture** via Bluetooth Low Energy (any BLE heart rate monitor)
 - **PLM-triggered arousal detection** — correlates HR spikes with limb movements to identify clinically significant arousals
 - **PLMAI scoring** (PLM Arousal Index) — the metric sleep physicians actually care about
 - Dual-threshold system: standard (+10 bpm) and strict (+15%) for research flexibility
@@ -105,5 +105,5 @@ make logs     # Follow container logs
 
 1. Open **Settings** in the dashboard
 2. Connect your **UniFi Protect** instance (host, credentials, select camera)
-3. Optionally enable **WHOOP/BLE** heart rate monitoring
+3. Optionally enable **BLE** heart rate monitoring
 4. Hit **Start Sleep Session** — video fetching and analysis begins automatically
