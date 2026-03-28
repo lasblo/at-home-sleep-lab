@@ -196,6 +196,7 @@ async def stop_session() -> dict:
         stopped_at=now.isoformat(),
         total_hours=round(total_hours, 4),
     )
+    db.invalidate_dashboard_cache()
 
     result = await db.get_session(session_id)
     logger.info(

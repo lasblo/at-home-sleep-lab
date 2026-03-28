@@ -2,13 +2,27 @@
 
 import json
 import os
-import statistics
-from datetime import datetime, date
+import time
+from datetime import date, datetime
 from pathlib import Path
 
 import asyncpg
+import numpy as np
 
 _pool: asyncpg.Pool | None = None
+
+# Dashboard summary cache (TTL-based)
+_dashboard_cache: dict | None = None
+_dashboard_cache_time: float = 0
+_DASHBOARD_CACHE_TTL: float = 60  # seconds
+
+
+def invalidate_dashboard_cache():
+    """Call when session data changes (e.g., analysis complete)."""
+    global _dashboard_cache, _dashboard_cache_time
+    _dashboard_cache = None
+    _dashboard_cache_time = 0
+
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS settings (
@@ -107,6 +121,8 @@ CREATE TABLE IF NOT EXISTS labels (
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS idx_labels_video ON labels(video_id);
+CREATE INDEX IF NOT EXISTS idx_videos_session ON videos(session_id);
+CREATE INDEX IF NOT EXISTS idx_sessions_status ON sessions(status);
 """
 
 
@@ -604,6 +620,15 @@ def _session_to_dict(row) -> dict:
 
 async def get_dashboard_summary() -> dict:
     """Aggregate stats across all analyzed sessions using SQL — no event loading."""
+    global _dashboard_cache, _dashboard_cache_time
+
+    now = time.monotonic()
+    if (
+        _dashboard_cache is not None
+        and (now - _dashboard_cache_time) < _DASHBOARD_CACHE_TTL
+    ):
+        return _dashboard_cache
+
     pool = await get_pool()
 
     # Per-session aggregates
@@ -727,7 +752,12 @@ async def get_dashboard_summary() -> dict:
         if s["session_id"] in sleep_quality:
             s["sleep_quality"] = sleep_quality[s["session_id"]]
 
-    return {"sessions": sessions, "aggregate_hourly": aggregate_hourly}
+    result = {"sessions": sessions, "aggregate_hourly": aggregate_hourly}
+
+    _dashboard_cache = result
+    _dashboard_cache_time = time.monotonic()
+
+    return result
 
 
 async def insert_video(
@@ -763,56 +793,92 @@ async def insert_video(
 
 
 def _sleeping_hr(hr_values: list[int], window_size: int = 300) -> int | None:
-    """Lowest 5-minute rolling median — robust sleeping HR estimate."""
-    if len(hr_values) < window_size:
-        return min(hr_values) if hr_values else None
+    """Lowest 5-minute rolling median — robust sleeping HR estimate.
 
-    best = float("inf")
-    for i in range(len(hr_values) - window_size + 1):
-        med = statistics.median(hr_values[i : i + window_size])
-        if med < best:
-            best = med
-    return round(best)
+    Uses a stride-based approach with numpy for O(n) performance instead of
+    the naive O(n * w * log w) sliding sort.
+    """
+    if not hr_values:
+        return None
+    if len(hr_values) < window_size:
+        return int(min(hr_values))
+
+    arr = np.array(hr_values, dtype=np.int32)
+    # Stride trick: create a view of sliding windows without copying
+    shape = (len(arr) - window_size + 1, window_size)
+    strides = (arr.strides[0], arr.strides[0])
+    windows = np.lib.stride_tricks.as_strided(arr, shape=shape, strides=strides)
+    medians = np.median(windows, axis=1)
+    return round(float(np.min(medians)))
 
 
 async def _compute_session_hr_stats(
     pool: asyncpg.Pool, sessions: list[dict]
 ) -> dict[str, dict]:
-    """Compute nightly HR stats for sessions that have HR data."""
-    hr_sessions = [s for s in sessions if s["hr_enabled"] and s["started_at"]]
+    """Compute nightly HR stats for sessions that have HR data.
+
+    Uses a single batched query instead of one query per session.
+    """
+    hr_sessions = [
+        s
+        for s in sessions
+        if s["hr_enabled"] and s["started_at"] and (s["total_hours"] or 0) > 0
+    ]
     if not hr_sessions:
         return {}
 
-    result = {}
+    # Build epoch ranges for all sessions
+    session_ranges = []
     for s in hr_sessions:
         started = datetime.fromisoformat(s["started_at"])
-        hours = s["total_hours"] or 0
-        if hours <= 0:
-            continue
-        end_epoch = started.timestamp() + hours * 3600
+        start_epoch = started.timestamp()
+        end_epoch = start_epoch + (s["total_hours"] or 0) * 3600
+        session_ranges.append((s["session_id"], start_epoch, end_epoch))
 
-        rows = await pool.fetch(
-            """
-            SELECT hr FROM hr_readings
-            WHERE epoch >= $1 AND epoch <= $2
-            ORDER BY epoch
-        """,
-            started.timestamp(),
-            end_epoch,
+    # Single query: fetch all HR readings for all sessions at once
+    session_ids = [sr[0] for sr in session_ranges]
+    start_epochs = [sr[1] for sr in session_ranges]
+    end_epochs = [sr[2] for sr in session_ranges]
+
+    rows = await pool.fetch(
+        """
+        WITH session_ranges AS (
+            SELECT
+                unnest($1::text[]) as session_id,
+                unnest($2::float8[]) as start_epoch,
+                unnest($3::float8[]) as end_epoch
         )
-        if not rows:
+        SELECT sr.session_id, h.hr, h.epoch
+        FROM hr_readings h
+        JOIN session_ranges sr
+            ON h.epoch >= sr.start_epoch AND h.epoch <= sr.end_epoch
+        ORDER BY sr.session_id, h.epoch
+        """,
+        session_ids,
+        start_epochs,
+        end_epochs,
+    )
+
+    # Group by session
+    hr_by_session: dict[str, list[int]] = {}
+    for r in rows:
+        hr_by_session.setdefault(r["session_id"], []).append(r["hr"])
+
+    result = {}
+    for sid, hr_values in hr_by_session.items():
+        if not hr_values:
             continue
 
-        hr_values = [r["hr"] for r in rows]
-        avg_hr = round(statistics.mean(hr_values))
-        min_hr = min(hr_values)
-        max_hr = max(hr_values)
+        arr = np.array(hr_values, dtype=np.int32)
+        avg_hr = round(float(np.mean(arr)))
+        min_hr = int(np.min(arr))
+        max_hr = int(np.max(arr))
         sleep_hr = _sleeping_hr(hr_values)
 
         # Nocturnal dip: compare first 30 min (pre-sleep/settling) to sleeping HR
         first_30min = hr_values[: min(1800, len(hr_values) // 4)]
         if first_30min and sleep_hr:
-            waking_hr = round(statistics.median(first_30min))
+            waking_hr = round(float(np.median(first_30min)))
             dip_pct = (
                 round((1 - sleep_hr / waking_hr) * 100, 1) if waking_hr > 0 else None
             )
@@ -820,7 +886,7 @@ async def _compute_session_hr_stats(
             waking_hr = None
             dip_pct = None
 
-        result[s["session_id"]] = {
+        result[sid] = {
             "avg_hr": avg_hr,
             "min_hr": min_hr,
             "max_hr": max_hr,
@@ -844,7 +910,7 @@ async def _compute_sleep_quality(
     if not session_ids:
         return {}
 
-    # Get all events with their absolute night-second offset
+    # Fetch events with only the columns needed for sleep quality
     rows = await pool.fetch(
         """
         SELECT
