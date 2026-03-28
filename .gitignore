@@ -4,5 +4,7 @@ output/
 __pycache__/
 *.pyc
 /videos/
+/hr_input/*.jsonl
+/hr_input/hr_status.json
 .DS_Store
 swift-motion/
