@@ -25,15 +25,16 @@ MAX_WORKERS = max(2, (os.cpu_count() or 4) // 2)
 app = FastAPI(title="PLMS Detector")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://localhost:5174"],
+    allow_origins=["*"],
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-BASE_DIR = Path(__file__).resolve().parent.parent
-VIDEOS_DIR = BASE_DIR / "videos"
-OUTPUT_DIR = BASE_DIR / "output"
-OUTPUT_DIR.mkdir(exist_ok=True)
+BASE_DIR = Path(os.environ.get("DATA_DIR", str(Path(__file__).resolve().parent.parent)))
+VIDEOS_DIR = Path(os.environ.get("VIDEOS_DIR", str(BASE_DIR / "videos")))
+OUTPUT_DIR = Path(os.environ.get("OUTPUT_DIR", str(BASE_DIR / "output")))
+VIDEOS_DIR.mkdir(parents=True, exist_ok=True)
+OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 # Processing state
 _processing = {"running": False, "progress": {}, "error": None}

@@ -1,0 +1,23 @@
+services:
+  backend:
+    build: ./backend
+    environment:
+      - VIDEOS_DIR=/data/videos
+      - OUTPUT_DIR=/data/output
+      - DATA_DIR=/data
+    volumes:
+      - videos:/data/videos
+      - output:/data/output
+    restart: unless-stopped
+
+  dashboard:
+    build: ./dashboard
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+volumes:
+  videos:
+  output:
