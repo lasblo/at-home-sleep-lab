@@ -483,6 +483,71 @@ async def night_detail(night_date: str):
     return compute_night_summary(night, OUTPUT_DIR)
 
 
+# --- Heart Rate (WHOOP BLE) ---
+
+HR_FILE = OUTPUT_DIR / "hr_live.jsonl"
+HR_STATUS_FILE = OUTPUT_DIR / "hr_status.json"
+
+
+@app.get("/api/hr/status")
+async def hr_status():
+    """Current HR listener status (run whoop_hr.py from Terminal separately)."""
+    if HR_STATUS_FILE.exists():
+        return json.loads(HR_STATUS_FILE.read_text())
+    return {"status": "not_running", "hint": "Run: .venv/bin/python backend/whoop_hr.py from Terminal.app"}
+
+
+@app.get("/api/hr/live")
+async def hr_live(since: float = 0, limit: int = 500):
+    """Get HR readings since a given epoch timestamp. Returns newest first."""
+    if not HR_FILE.exists():
+        return {"readings": [], "count": 0}
+
+    readings = []
+    with open(HR_FILE) as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            entry = json.loads(line)
+            if entry["epoch"] > since:
+                readings.append(entry)
+
+    # Return newest first, limited
+    readings.sort(key=lambda r: r["epoch"], reverse=True)
+    return {"readings": readings[:limit], "count": len(readings)}
+
+
+@app.get("/api/hr/night/{night_date}")
+async def hr_for_night(night_date: str):
+    """Get all HR readings for a specific night (between sleep start and end)."""
+    videos = _list_videos()
+    nights = group_videos_into_nights(videos)
+    night = next((n for n in nights if n["night_date"] == night_date), None)
+    if not night:
+        raise HTTPException(404, f"Night {night_date} not found")
+
+    from datetime import datetime
+    start = datetime.fromisoformat(night["start_local"]).timestamp()
+    end = datetime.fromisoformat(night["end_local"]).timestamp()
+
+    if not HR_FILE.exists():
+        return {"readings": [], "night_date": night_date}
+
+    readings = []
+    with open(HR_FILE) as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            entry = json.loads(line)
+            if start <= entry["epoch"] <= end:
+                readings.append(entry)
+
+    readings.sort(key=lambda r: r["epoch"])
+    return {"readings": readings, "night_date": night_date, "count": len(readings)}
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
