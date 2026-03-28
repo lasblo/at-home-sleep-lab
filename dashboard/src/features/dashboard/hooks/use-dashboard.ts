@@ -19,6 +19,17 @@ export interface DashboardStats {
   meanArousalPct: number | null
   meanPLMAI: number | null
   arousalTrend: number | null
+  // HR stats
+  hasHRStats: boolean
+  avgSleepingHR: number | null
+  avgHRDip: number | null
+  sleepingHRTrend: number | null
+  // Sleep quality
+  hasSleepQuality: boolean
+  avgEfficiency: number | null
+  avgOnsetMin: number | null
+  avgWasoMin: number | null
+  efficiencyTrend: number | null
 }
 
 function avg(arr: number[]): number {
@@ -99,6 +110,23 @@ export function useDashboardStats(
       dist[plmiSeverity(s.plmi)]++
     }
 
+    // HR stats
+    const hrSessions = sessions.filter((s) => s.hr_stats?.sleeping_hr != null)
+    const sleepingHRs = hrSessions.map((s) => s.hr_stats!.sleeping_hr!)
+    const dipPcts = sessions
+      .filter((s) => s.hr_stats?.dip_pct != null)
+      .map((s) => s.hr_stats!.dip_pct!)
+
+    // Sleep quality
+    const qualitySessions = sessions.filter(
+      (s) => s.sleep_quality?.efficiency_pct != null
+    )
+    const efficiencies = qualitySessions.map(
+      (s) => s.sleep_quality!.efficiency_pct!
+    )
+    const onsets = qualitySessions.map((s) => s.sleep_quality!.sleep_onset_min)
+    const wasos = qualitySessions.map((s) => s.sleep_quality!.waso_min)
+
     return {
       sessions,
       nightCount: sessions.length,
@@ -121,6 +149,27 @@ export function useDashboardStats(
           ? avg(arousalSessions.map((s) => s.plmai!))
           : null,
       arousalTrend: trend7d(sessions, (s) => s.arousal_pct),
+      // HR stats
+      hasHRStats: hrSessions.length > 0,
+      avgSleepingHR:
+        sleepingHRs.length > 0 ? Math.round(avg(sleepingHRs)) : null,
+      avgHRDip: dipPcts.length > 0 ? Math.round(avg(dipPcts) * 10) / 10 : null,
+      sleepingHRTrend: trend7d(
+        sessions,
+        (s) => s.hr_stats?.sleeping_hr ?? null
+      ),
+      // Sleep quality
+      hasSleepQuality: qualitySessions.length > 0,
+      avgEfficiency:
+        efficiencies.length > 0
+          ? Math.round(avg(efficiencies) * 10) / 10
+          : null,
+      avgOnsetMin: onsets.length > 0 ? Math.round(avg(onsets) * 10) / 10 : null,
+      avgWasoMin: wasos.length > 0 ? Math.round(avg(wasos) * 10) / 10 : null,
+      efficiencyTrend: trend7d(
+        sessions,
+        (s) => s.sleep_quality?.efficiency_pct ?? null
+      ),
     }
   }, [sessions])
 }

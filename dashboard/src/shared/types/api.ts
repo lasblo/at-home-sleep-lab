@@ -144,6 +144,23 @@ export interface SessionDetail extends Session {
   arousal_summary?: ArousalSummary
 }
 
+export interface HRStats {
+  avg_hr: number
+  min_hr: number
+  max_hr: number
+  sleeping_hr: number | null
+  waking_hr: number | null
+  dip_pct: number | null
+  reading_count: number
+}
+
+export interface SleepQuality {
+  sleep_onset_min: number
+  waso_min: number
+  efficiency_pct: number | null
+  wake_bouts: number
+}
+
 export interface DashboardSession {
   session_id: string
   night_date: string
@@ -157,6 +174,8 @@ export interface DashboardSession {
   started_at: string | null
   arousal_pct: number | null
   plmai: number | null
+  hr_stats?: HRStats
+  sleep_quality?: SleepQuality
 }
 
 export interface AggregateHourly {

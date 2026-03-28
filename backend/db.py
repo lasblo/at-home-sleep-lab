@@ -2,6 +2,7 @@
 
 import json
 import os
+import statistics
 from datetime import datetime, date
 from pathlib import Path
 
@@ -665,6 +666,19 @@ async def get_dashboard_summary() -> dict:
             }
         )
 
+    # ── Nightly HR stats for HR-enabled sessions ──
+    if session_ids_with_hr:
+        hr_stats = await _compute_session_hr_stats(pool, sessions)
+        for s in sessions:
+            if s["session_id"] in hr_stats:
+                s["hr_stats"] = hr_stats[s["session_id"]]
+
+    # ── Sleep quality metrics from motion events ──
+    sleep_quality = await _compute_sleep_quality(pool, sessions)
+    for s in sessions:
+        if s["session_id"] in sleep_quality:
+            s["sleep_quality"] = sleep_quality[s["session_id"]]
+
     return {"sessions": sessions, "aggregate_hourly": aggregate_hourly}
 
 
@@ -695,3 +709,235 @@ async def insert_video(
         duration_sec,
         session_id,
     )
+
+
+# ── Nightly HR Stats ──────────────────────────────────────────────
+
+
+def _sleeping_hr(hr_values: list[int], window_size: int = 300) -> int | None:
+    """Lowest 5-minute rolling median — robust sleeping HR estimate."""
+    if len(hr_values) < window_size:
+        return min(hr_values) if hr_values else None
+
+    best = float("inf")
+    for i in range(len(hr_values) - window_size + 1):
+        med = statistics.median(hr_values[i : i + window_size])
+        if med < best:
+            best = med
+    return round(best)
+
+
+async def _compute_session_hr_stats(
+    pool: asyncpg.Pool, sessions: list[dict]
+) -> dict[str, dict]:
+    """Compute nightly HR stats for sessions that have HR data."""
+    hr_sessions = [s for s in sessions if s["hr_enabled"] and s["started_at"]]
+    if not hr_sessions:
+        return {}
+
+    result = {}
+    for s in hr_sessions:
+        started = datetime.fromisoformat(s["started_at"])
+        hours = s["total_hours"] or 0
+        if hours <= 0:
+            continue
+        end_epoch = started.timestamp() + hours * 3600
+
+        rows = await pool.fetch(
+            """
+            SELECT hr FROM hr_readings
+            WHERE epoch >= $1 AND epoch <= $2
+            ORDER BY epoch
+        """,
+            started.timestamp(),
+            end_epoch,
+        )
+        if not rows:
+            continue
+
+        hr_values = [r["hr"] for r in rows]
+        avg_hr = round(statistics.mean(hr_values))
+        min_hr = min(hr_values)
+        max_hr = max(hr_values)
+        sleep_hr = _sleeping_hr(hr_values)
+
+        # Nocturnal dip: compare first 30 min (pre-sleep/settling) to sleeping HR
+        first_30min = hr_values[: min(1800, len(hr_values) // 4)]
+        if first_30min and sleep_hr:
+            waking_hr = round(statistics.median(first_30min))
+            dip_pct = (
+                round((1 - sleep_hr / waking_hr) * 100, 1) if waking_hr > 0 else None
+            )
+        else:
+            waking_hr = None
+            dip_pct = None
+
+        result[s["session_id"]] = {
+            "avg_hr": avg_hr,
+            "min_hr": min_hr,
+            "max_hr": max_hr,
+            "sleeping_hr": sleep_hr,
+            "waking_hr": waking_hr,
+            "dip_pct": dip_pct,
+            "reading_count": len(hr_values),
+        }
+
+    return result
+
+
+# ── Sleep Quality from Motion ─────────────────────────────────────
+
+
+async def _compute_sleep_quality(
+    pool: asyncpg.Pool, sessions: list[dict]
+) -> dict[str, dict]:
+    """Estimate sleep efficiency, onset latency, and WASO from motion events."""
+    session_ids = [s["session_id"] for s in sessions]
+    if not session_ids:
+        return {}
+
+    # Get all events with their absolute night-second offset
+    rows = await pool.fetch(
+        """
+        SELECT
+            v.session_id,
+            extract(epoch from v.start_local - s.started_at) + e.timestamp_sec as night_sec,
+            e.movement_type,
+            e.duration_sec,
+            e.amplitude
+        FROM events e
+        JOIN videos v ON e.video_id = v.id AND v.processed = true
+        JOIN sessions s ON v.session_id = s.id
+        WHERE v.session_id = ANY($1)
+        ORDER BY v.session_id, night_sec
+    """,
+        session_ids,
+    )
+
+    # Group events by session
+    events_by_session: dict[str, list[dict]] = {}
+    for r in rows:
+        sid = r["session_id"]
+        events_by_session.setdefault(sid, []).append(
+            {
+                "night_sec": r["night_sec"],
+                "movement_type": r["movement_type"],
+                "duration_sec": r["duration_sec"],
+                "amplitude": r["amplitude"],
+            }
+        )
+
+    result = {}
+    for s in sessions:
+        sid = s["session_id"]
+        hours = s["total_hours"] or 0
+        if hours <= 0:
+            continue
+        total_sec = hours * 3600
+        events = events_by_session.get(sid, [])
+
+        # Sleep onset latency: first 10-min gap with no significant motion
+        onset_sec = _estimate_sleep_onset(events, total_sec)
+
+        # WASO: sum of wake periods after sleep onset (motion clusters > 2 min)
+        waso_sec = _estimate_waso(events, onset_sec, total_sec)
+
+        # Sleep efficiency
+        sleep_time = total_sec - onset_sec - waso_sec
+        efficiency = (
+            round(max(0, sleep_time / total_sec) * 100, 1) if total_sec > 0 else None
+        )
+
+        # Fragmentation: number of wake bouts after onset
+        wake_bouts = _count_wake_bouts(events, onset_sec, total_sec)
+
+        result[sid] = {
+            "sleep_onset_min": round(onset_sec / 60, 1),
+            "waso_min": round(waso_sec / 60, 1),
+            "efficiency_pct": efficiency,
+            "wake_bouts": wake_bouts,
+        }
+
+    return result
+
+
+def _estimate_sleep_onset(events: list[dict], total_sec: float) -> float:
+    """Find first 10-minute quiet window — that's estimated sleep onset."""
+    quiet_threshold = 600  # 10 minutes
+    if not events:
+        return 0
+
+    # Check gap before first event
+    if events[0]["night_sec"] >= quiet_threshold:
+        return 0
+
+    # Check gaps between events
+    for i in range(len(events) - 1):
+        gap = events[i + 1]["night_sec"] - events[i]["night_sec"]
+        if gap >= quiet_threshold:
+            return events[i]["night_sec"]
+
+    # No long quiet period found — assume fell asleep after 15 min
+    return min(900, total_sec * 0.05)
+
+
+def _estimate_waso(events: list[dict], onset_sec: float, total_sec: float) -> float:
+    """Estimate wake-after-sleep-onset from motion clusters."""
+    # A "wake bout" is a cluster of events within 2 minutes of each other
+    # with at least one body movement or high-amplitude event
+    post_onset = [e for e in events if e["night_sec"] > onset_sec]
+    if not post_onset:
+        return 0
+
+    waso = 0.0
+    cluster_start = None
+    cluster_end = None
+
+    for e in post_onset:
+        t = e["night_sec"]
+        is_significant = e["movement_type"] == "body" or e["amplitude"] > 0.5
+
+        if cluster_start is None:
+            if is_significant:
+                cluster_start = t
+                cluster_end = t + e["duration_sec"]
+        else:
+            if t - cluster_end < 120:  # within 2 min of cluster
+                cluster_end = t + e["duration_sec"]
+            else:
+                # Close cluster — count as wake if > 2 min
+                duration = cluster_end - cluster_start
+                if duration > 120:
+                    waso += duration
+                if is_significant:
+                    cluster_start = t
+                    cluster_end = t + e["duration_sec"]
+                else:
+                    cluster_start = None
+                    cluster_end = None
+
+    # Close final cluster
+    if cluster_start is not None:
+        duration = cluster_end - cluster_start
+        if duration > 120:
+            waso += duration
+
+    return waso
+
+
+def _count_wake_bouts(events: list[dict], onset_sec: float, total_sec: float) -> int:
+    """Count distinct wake episodes after sleep onset."""
+    post_onset = [
+        e
+        for e in events
+        if e["night_sec"] > onset_sec
+        and (e["movement_type"] == "body" or e["amplitude"] > 0.5)
+    ]
+    if not post_onset:
+        return 0
+
+    bouts = 1
+    for i in range(1, len(post_onset)):
+        if post_onset[i]["night_sec"] - post_onset[i - 1]["night_sec"] > 300:
+            bouts += 1
+    return bouts

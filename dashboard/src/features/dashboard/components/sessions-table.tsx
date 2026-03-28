@@ -14,11 +14,15 @@ import type { DashboardSession } from "@/shared/types/api"
 interface SessionsTableProps {
   sessions: DashboardSession[]
   hasArousalData: boolean
+  hasHRStats?: boolean
+  hasSleepQuality?: boolean
 }
 
 export function SessionsTable({
   sessions,
   hasArousalData,
+  hasHRStats,
+  hasSleepQuality,
 }: SessionsTableProps) {
   const navigate = useNavigate()
 
@@ -39,6 +43,12 @@ export function SessionsTable({
             <TableHead className="text-right">Body</TableHead>
             {hasArousalData && (
               <TableHead className="text-right">Arousal</TableHead>
+            )}
+            {hasHRStats && (
+              <TableHead className="text-right">Sleep HR</TableHead>
+            )}
+            {hasSleepQuality && (
+              <TableHead className="text-right">Efficiency</TableHead>
             )}
           </TableRow>
         </TableHeader>
@@ -70,6 +80,20 @@ export function SessionsTable({
               {hasArousalData && (
                 <TableCell className="text-right tabular-nums">
                   {s.arousal_pct != null ? `${s.arousal_pct}%` : "-"}
+                </TableCell>
+              )}
+              {hasHRStats && (
+                <TableCell className="text-right tabular-nums">
+                  {s.hr_stats?.sleeping_hr != null
+                    ? `${s.hr_stats.sleeping_hr} bpm`
+                    : "-"}
+                </TableCell>
+              )}
+              {hasSleepQuality && (
+                <TableCell className="text-right tabular-nums">
+                  {s.sleep_quality?.efficiency_pct != null
+                    ? `${s.sleep_quality.efficiency_pct}%`
+                    : "-"}
                 </TableCell>
               )}
             </TableRow>

@@ -2,12 +2,13 @@ import { useNavigate } from "react-router-dom"
 import { useActiveSession } from "@/features/sessions/hooks/use-sessions"
 import { useDashboardSummary, useDashboardStats } from "./hooks/use-dashboard"
 import { PlmiTrendChart } from "./components/plmi-trend-chart"
+import { HRTrendChart } from "./components/hr-trend-chart"
+import { SleepQualityChart } from "./components/sleep-quality-chart"
 import { SeverityChart } from "./components/severity-chart"
 import { AggregateHourlyChart } from "./components/aggregate-hourly"
 import { SessionsTable } from "./components/sessions-table"
 import { PageHeader } from "@/shared/components/page-header"
 import { StatCard } from "@/shared/components/stat-card"
-import { PlmiBadge } from "@/shared/components/plmi-badge"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -122,7 +123,7 @@ export default function DashboardPage() {
       {active && <ActiveSessionBanner session={active} />}
 
       {/* Stat cards */}
-      <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-6">
+      <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
         <StatCard
           label="Mean PLMI"
           value={stats.meanPLMI}
@@ -166,10 +167,59 @@ export default function DashboardPage() {
             description="PLM Arousal Index"
           />
         )}
+        {stats.hasHRStats && stats.avgSleepingHR != null && (
+          <StatCard
+            label="Sleeping HR"
+            value={`${stats.avgSleepingHR} bpm`}
+            description={
+              stats.avgHRDip != null
+                ? `${stats.avgHRDip}% nocturnal dip`
+                : undefined
+            }
+            trend={
+              stats.sleepingHRTrend != null
+                ? { value: stats.sleepingHRTrend }
+                : undefined
+            }
+          />
+        )}
+        {stats.hasSleepQuality && stats.avgEfficiency != null && (
+          <StatCard
+            label="Sleep Efficiency"
+            value={`${stats.avgEfficiency}%`}
+            description={
+              stats.avgWasoMin != null
+                ? `WASO ~${stats.avgWasoMin}m`
+                : undefined
+            }
+            trend={
+              stats.efficiencyTrend != null
+                ? { value: stats.efficiencyTrend }
+                : undefined
+            }
+          />
+        )}
+        {stats.hasSleepQuality && stats.avgOnsetMin != null && (
+          <StatCard
+            label="Sleep Onset"
+            value={`${stats.avgOnsetMin}m`}
+            description="Avg time to fall asleep"
+          />
+        )}
       </div>
 
       {/* PLMI trend — primary chart */}
       <PlmiTrendChart sessions={stats.sessions} />
+
+      {/* HR + Sleep Quality trend charts */}
+      {(stats.hasHRStats || stats.hasSleepQuality) && (
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+          {stats.hasHRStats && <HRTrendChart sessions={stats.sessions} />}
+          {stats.hasSleepQuality && (
+            <SleepQualityChart sessions={stats.sessions} />
+          )}
+        </div>
+      )}
 
       {/* Severity distribution + hourly pattern */}
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
@@ -201,6 +251,8 @@ export default function DashboardPage() {
         <SessionsTable
           sessions={stats.sessions}
           hasArousalData={stats.hasArousalData}
+          hasHRStats={stats.hasHRStats}
+          hasSleepQuality={stats.hasSleepQuality}
         />
       </div>
     </div>
