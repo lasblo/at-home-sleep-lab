@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-At-home sleep lab for clinical sleep analytics — video-based motion/arousal detection, WHOOP heart rate monitoring, and UniFi camera integration. Full-stack: Python FastAPI backend + React/TypeScript frontend, orchestrated via Docker Compose.
+At-home sleep lab for clinical sleep analytics — video-based motion/arousal detection, BLE heart rate monitoring, and UniFi camera integration. Full-stack: Python FastAPI backend + React/TypeScript frontend, orchestrated via Docker Compose.
 
 ## Development Commands
 
@@ -26,7 +26,7 @@ At-home sleep lab for clinical sleep analytics — video-based motion/arousal de
 
 - **backend/** — FastAPI (Python 3.12, asyncpg, OpenCV). Handles sessions, video processing pipeline, PLMS detection, UniFi camera control.
 - **dashboard/** — React 19 + TypeScript + Vite + shadcn/ui + Tailwind CSS v4. Uses TanStack Query for data fetching, Recharts for charts.
-- **ble_service.py** — Standalone Bluetooth microservice that runs on the **host machine** (not Docker) because containers can't access Bluetooth hardware. Connects to WHOOP HR monitor.
+- **ble_service.py** — Standalone Bluetooth microservice that runs on the **host machine** (not Docker) because containers can't access Bluetooth hardware. Connects to BLE heart rate monitors.
 - **PostgreSQL 16** — session and metrics storage. Dev credentials: `sleeplab:sleeplab@db:5432/sleeplab`.
 
 ## Code Style

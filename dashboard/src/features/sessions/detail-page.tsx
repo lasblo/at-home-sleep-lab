@@ -92,7 +92,7 @@ export default function SessionDetailPage() {
         )}
         {session.hr_enabled && (
           <Badge variant="secondary" className="text-[10px]">
-            WHOOP HR
+            BLE HR
           </Badge>
         )}
         {session.summary && (

@@ -7,7 +7,6 @@ import {
   ReferenceLine,
   XAxis,
   YAxis,
-  Dot,
 } from "recharts"
 import {
   ChartContainer,
@@ -60,8 +59,11 @@ export function PlmiTrendChart({ sessions }: PlmiTrendChartProps) {
         <ChartContainer config={chartConfig} className="h-[250px] w-full">
           <AreaChart
             data={data}
-            onClick={(state) => {
-              const sid = state?.activePayload?.[0]?.payload?.sessionId
+            onClick={(state: Record<string, unknown>) => {
+              const payloads = state?.activePayload as
+                | { payload: { sessionId?: string } }[]
+                | undefined
+              const sid = payloads?.[0]?.payload?.sessionId
               if (sid) navigate(`/sessions/${sid}`)
             }}
           >
