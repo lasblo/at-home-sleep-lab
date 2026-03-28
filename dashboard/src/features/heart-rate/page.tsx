@@ -61,8 +61,10 @@ export default function HeartRatePage() {
     onSuccess: (data) => {
       if (data.status === "already_running") {
         toast.info("HR monitor is already running")
+      } else if (data.status === "failed") {
+        toast.error(data.error || "Failed to start HR monitor")
       } else {
-        toast.success("HR monitor started")
+        toast.success("HR monitor started — scanning for WHOOP device...")
       }
       queryClient.invalidateQueries({ queryKey: ["hr", "status"] })
     },
@@ -82,6 +84,8 @@ export default function HeartRatePage() {
   })
 
   const isConnected = hrStatus?.status === "connected"
+  const isManaged = hrStatus?.managed === true
+  const isStarting = hrStatus?.status === "starting"
 
   const arousalNights = useMemo(
     () =>
@@ -185,6 +189,26 @@ export default function HeartRatePage() {
                   Stop Monitoring
                 </Button>
               </>
+            ) : isStarting || isManaged ? (
+              <>
+                <Spinner className="size-5" />
+                <div className="flex flex-col gap-0.5">
+                  <Badge variant="secondary">Scanning...</Badge>
+                  <span className="text-xs text-muted-foreground">
+                    Looking for WHOOP device via Bluetooth
+                  </span>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="ml-auto"
+                  onClick={() => stopHR.mutate()}
+                  disabled={stopHR.isPending}
+                >
+                  <Square data-icon="inline-start" />
+                  Stop
+                </Button>
+              </>
             ) : (
               <>
                 <WifiOff className="size-5 text-muted-foreground" />
@@ -192,6 +216,7 @@ export default function HeartRatePage() {
                   <Badge variant="outline">Not Connected</Badge>
                   <span className="text-xs text-muted-foreground">
                     Start monitoring to collect heart rate data during sleep.
+                    Requires Bluetooth access.
                   </span>
                 </div>
                 <Button

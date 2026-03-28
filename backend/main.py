@@ -541,10 +541,16 @@ def _read_hr_files(start_epoch: float = 0, end_epoch: float = float("inf")) -> l
 
 @app.get("/api/hr/status")
 async def hr_status():
-    """Current HR listener status (run whoop_hr.py from Terminal separately)."""
+    """Current HR listener status."""
+    # Check if our managed subprocess is alive
+    running = _hr_process is not None and _hr_process.poll() is None
+
     if HR_STATUS_FILE.exists():
-        return json.loads(HR_STATUS_FILE.read_text())
-    return {"status": "not_running", "hint": "Run: .venv/bin/python backend/whoop_hr.py from Terminal.app"}
+        data = json.loads(HR_STATUS_FILE.read_text())
+        data["managed"] = running
+        return data
+
+    return {"status": "stopped" if not running else "starting", "managed": running}
 
 
 @app.get("/api/hr/live")
@@ -624,9 +630,18 @@ async def hr_start():
     _hr_process = subprocess.Popen(
         [sys.executable, str(hr_script)],
         cwd=str(BASE_DIR),
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
     )
+
+    # Wait briefly to see if it crashes immediately (e.g. no Bluetooth)
+    import time
+    time.sleep(1.5)
+    if _hr_process.poll() is not None:
+        stderr = _hr_process.stderr.read().decode() if _hr_process.stderr else ""
+        _hr_process = None
+        return {"status": "failed", "error": stderr.strip() or "Process exited immediately. Bluetooth may not be available."}
+
     return {"status": "started", "pid": _hr_process.pid}
 
 
