@@ -128,7 +128,7 @@ export default function SessionsPage() {
                 <TableCell>
                   {s.hr_enabled ? (
                     <Badge variant="secondary" className="text-[10px]">
-                      WHOOP
+                      HR
                     </Badge>
                   ) : (
                     <span className="text-muted-foreground">-</span>
