@@ -1,7 +1,6 @@
 import { useNavigate } from "react-router-dom"
 import { useSessions } from "./hooks/use-sessions"
 import { PageHeader } from "@/shared/components/page-header"
-import { PlmiBadge } from "@/shared/components/plmi-badge"
 import {
   Table,
   TableBody,
