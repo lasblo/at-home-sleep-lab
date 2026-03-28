@@ -172,9 +172,9 @@ export default function SettingsPage() {
             <Label htmlFor="unifi-host">NVR Address</Label>
             <Input
               id="unifi-host"
-              placeholder="https://192.168.1.1"
+              placeholder="192.168.1.1"
               value={unifiHost}
-              onChange={(e) => { setUnifiHost(e.target.value); setTestResult(null) }}
+              onChange={(e) => { setUnifiHost(e.target.value.replace(/^https?:\/\//, "")); setTestResult(null) }}
             />
           </div>
           <div className="grid grid-cols-2 gap-4">
