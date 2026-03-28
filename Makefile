@@ -4,7 +4,7 @@ up:
 	docker compose up -d
 
 dev:
-	docker compose -f compose.dev.yml up
+	docker compose -f compose.dev.yml up -d
 
 down:
 	docker compose down
