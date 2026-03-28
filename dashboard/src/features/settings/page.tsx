@@ -10,7 +10,7 @@ import { Separator } from "@/components/ui/separator"
 import { UniFiCard } from "./components/unifi-card"
 import { BluetoothCard } from "./components/bluetooth-card"
 import { HRMonitorCard } from "./components/hr-monitor-card"
-import { ThemeToggle } from "@/shared/components/theme-toggle"
+import { ThemeSelector } from "@/shared/components/theme-selector"
 
 export default function SettingsPage() {
   return (
@@ -32,7 +32,7 @@ export default function SettingsPage() {
           <CardDescription>Press 'd' to toggle theme quickly.</CardDescription>
         </CardHeader>
         <CardContent>
-          <ThemeToggle showLabels />
+          <ThemeSelector />
         </CardContent>
       </Card>
     </div>
