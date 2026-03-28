@@ -1,4 +1,5 @@
 import { useNavigate } from "react-router-dom"
+import { useQuery } from "@tanstack/react-query"
 import {
   useActiveSession,
   useStartSession,
@@ -7,7 +8,7 @@ import {
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Spinner } from "@/components/ui/spinner"
-import { Play, Square, Clock } from "lucide-react"
+import { Play, Square, Clock, Settings } from "lucide-react"
 
 function formatElapsed(startedAt: string): string {
   const start = new Date(startedAt).getTime()
@@ -24,6 +25,15 @@ export function SessionControl() {
   const { data: active, isLoading } = useActiveSession()
   const startSession = useStartSession()
   const stopSession = useStopSession()
+  const { data: unifiSettings } = useQuery({
+    queryKey: ["settings", "unifi"],
+    queryFn: async () => {
+      const res = await fetch("/api/settings/unifi")
+      if (!res.ok) return null
+      return res.json()
+    },
+  })
+  const cameraConfigured = !!unifiSettings?.camera_id
 
   if (isLoading) {
     return (
@@ -69,6 +79,19 @@ export function SessionControl() {
           </Button>
         </div>
       </div>
+    )
+  }
+
+  if (!cameraConfigured) {
+    return (
+      <Button
+        variant="outline"
+        className="w-full"
+        onClick={() => navigate("/settings")}
+      >
+        <Settings data-icon="inline-start" />
+        Set Up Camera
+      </Button>
     )
   }
 
