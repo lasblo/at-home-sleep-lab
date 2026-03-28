@@ -345,6 +345,12 @@ export default function Dashboard({ nights, onSelectNight, processing }) {
     // Night-over-night PLMI change
     const recentPLMI = scored.length >= 2 ? plmis[plmis.length - 1] - plmis[plmis.length - 2] : null
 
+    // Arousal analytics (only nights with HR data)
+    const arousalNights = scored.filter(n => n.arousal_summary)
+    const plmais = arousalNights.map(n => n.arousal_summary.plmai)
+    const arousalPcts = arousalNights.map(n => n.arousal_summary.arousal_percentage)
+    const arousalMags = arousalNights.map(n => n.arousal_summary.mean_magnitude_bpm).filter(v => v > 0)
+
     // Data points for charts
     const chartData = scored.map(n => ({
       date: n.night_date,
@@ -353,6 +359,8 @@ export default function Dashboard({ nights, onSelectNight, processing }) {
       series: n.summary.series_count,
       body: n.summary.body_movements || 0,
       hours: n.total_hours,
+      plmai: n.arousal_summary?.plmai ?? null,
+      arousalPct: n.arousal_summary?.arousal_percentage ?? null,
       bedtime: parseInt(n.start_local.slice(11, 13)) + parseInt(n.start_local.slice(14, 16)) / 60,
       waketime: parseInt(n.end_local.slice(11, 13)) + parseInt(n.end_local.slice(14, 16)) / 60,
     }))
@@ -386,6 +394,13 @@ export default function Dashboard({ nights, onSelectNight, processing }) {
       avgPLMsPerSeries: avgPLMsPerSeries,
       avgMovementIntensity: avg(movementIntensity),
       chartData,
+      // Arousal metrics
+      hasArousalData: arousalNights.length > 0,
+      avgPLMAI: plmais.length > 0 ? avg(plmais) : null,
+      plmaiTrend: plmais.length >= 3 ? trend(plmais) : null,
+      avgArousalPct: arousalPcts.length > 0 ? avg(arousalPcts) : null,
+      avgArousalMag: arousalMags.length > 0 ? avg(arousalMags) : null,
+      arousalChartData: chartData.filter(d => d.plmai != null),
     }
   }, [scored])
 
@@ -421,6 +436,12 @@ export default function Dashboard({ nights, onSelectNight, processing }) {
           label="Avg Sleep" value={a.avgHours.toFixed(1)} unit="h"
           subtext={`${a.avgBedtime} → ${a.avgWaketime}`} trend={a.hoursTrend}
         />
+        {a.hasArousalData && (
+          <StatCard
+            label="Avg PLMAI" value={a.avgPLMAI.toFixed(1)} color={plmiColor(a.avgPLMAI)}
+            subtext={`${a.avgArousalPct?.toFixed(0)}% arousals`} trend={a.plmaiTrend}
+          />
+        )}
         <StatCard
           label="PLM-Free Hours" value={a.plmFreePercent.toFixed(0)} unit="%"
           subtext="of recorded hours"
@@ -442,6 +463,18 @@ export default function Dashboard({ nights, onSelectNight, processing }) {
             onClickPoint={(d) => onSelectNight(d.date)}
           />
         </div>
+
+        {/* PLMAI Trend (if arousal data exists) */}
+        {a.hasArousalData && a.arousalChartData.length > 0 && (
+          <div style={{ ...S.chartBox, gridColumn: '1 / -1' }}>
+            <div style={S.chartTitle}>PLMAI Trend (PLM Arousal Index)</div>
+            <LineChart
+              data={a.arousalChartData} yKey="plmai" color="#ec4899" height={140}
+              thresholds={[{value: 5, label: 'Normal'}, {value: 15, label: 'Mild'}, {value: 25, label: 'Moderate'}]}
+              onClickPoint={(d) => onSelectNight(d.date)}
+            />
+          </div>
+        )}
 
         {/* PLM Count per night */}
         <div style={S.chartBox}>
@@ -497,6 +530,12 @@ export default function Dashboard({ nights, onSelectNight, processing }) {
         <StatCard label="Movement Rate" value={a.avgMovementIntensity.toFixed(1)} unit="/h" subtext="all events per hour" />
         <StatCard label="Best Night" value={a.minPLMI.toFixed(1)} unit="PLMI" subtext={a.bestNight ? formatDate(a.bestNight) : ''} color="#22c55e" />
         <StatCard label="Worst Night" value={a.maxPLMI.toFixed(1)} unit="PLMI" subtext={a.worstNight ? formatDate(a.worstNight) : ''} color="#ef4444" />
+        {a.hasArousalData && (
+          <>
+            <StatCard label="Avg Arousal %" value={a.avgArousalPct.toFixed(0)} unit="%" subtext={a.avgArousalPct > 50 ? 'majority disruptive' : 'some subclinical'} color={a.avgArousalPct > 50 ? '#ef4444' : '#f59e0b'} />
+            <StatCard label="Avg HR Spike" value={a.avgArousalMag?.toFixed(1) || '—'} unit="bpm" subtext="mean arousal magnitude" />
+          </>
+        )}
       </div>
 
       {/* Night cards */}

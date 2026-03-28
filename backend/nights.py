@@ -6,6 +6,9 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 from plms import apply_plms_criteria
+from arousal import compute_night_arousal
+
+HR_DIR = Path(__file__).parent.parent / "output" / "hr"
 
 
 MAX_GAP_HOURS = 2  # videos within this gap belong to the same night
@@ -135,6 +138,13 @@ def compute_night_summary(night: dict, output_dir: Path) -> dict:
         if "_orig_onset" in e:
             e["onset_sec"] = e.pop("_orig_onset")
 
+    # Compute cardiac arousal annotations (on-demand, uses HR data if available)
+    arousal_result = compute_night_arousal(
+        plms_result["events"], videos_info, HR_DIR, night["total_hours"]
+    )
+    plms_result["events"] = arousal_result["events"]
+    arousal_summary = arousal_result.get("arousal_summary")
+
     # Compute hourly distribution
     total_night_sec = night["total_hours"] * 3600
     num_hours = max(1, math.ceil(total_night_sec / 3600))
@@ -174,6 +184,7 @@ def compute_night_summary(night: dict, output_dir: Path) -> dict:
         "video_ids": night["video_ids"],
         "videos": videos_info,
         "summary": plms_result["summary"],
+        "arousal_summary": arousal_summary,
         "hourly_distribution": hourly,
         "events": plms_result["events"],
         "series": plms_result["series"],

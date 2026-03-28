@@ -435,7 +435,20 @@ async def video_results(video_id: str):
     if not path.exists():
         raise HTTPException(404, "Results not found for this video")
     with open(path) as f:
-        return json.load(f)
+        data = json.load(f)
+
+    # On-demand arousal annotation if HR data exists
+    from arousal import compute_video_arousal
+    hr_dir = OUTPUT_DIR / "hr"
+    video = data.get("video", {})
+    start_local = video.get("start_local", "")
+    duration = video.get("duration_sec", 3600)
+    if start_local and hr_dir.exists() and data.get("events"):
+        data["events"], data["arousal_summary"] = compute_video_arousal(
+            data["events"], start_local, hr_dir, duration
+        )
+
+    return data
 
 
 # --- Nights ---
@@ -465,9 +478,11 @@ async def list_nights():
             summary = compute_night_summary(night, OUTPUT_DIR)
             base["summary"] = summary["summary"]
             base["hourly_distribution"] = summary["hourly_distribution"]
+            base["arousal_summary"] = summary.get("arousal_summary")
         else:
             base["summary"] = None
             base["hourly_distribution"] = None
+            base["arousal_summary"] = None
         result.append(base)
     return result
 

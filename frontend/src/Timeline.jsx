@@ -156,6 +156,23 @@ export default function Timeline({ motionSignal, events, videoDuration, onSeek, 
     }
     ctx.globalAlpha = 1
 
+    // Draw arousal highlight regions (behind HR curve)
+    if (events) {
+      for (const e of events) {
+        if (!e.arousal?.has_arousal) continue
+        const startSec = e.timestamp_sec
+        const endSec = startSec + (e.arousal.onset_delay_sec || 0) + (e.arousal.duration_sec || 5)
+        const x1 = xScale(startSec)
+        const x2 = xScale(Math.min(endSec, videoDuration))
+        // Red highlight region
+        ctx.fillStyle = 'rgba(239, 68, 68, 0.10)'
+        ctx.fillRect(x1, PADDING.top, x2 - x1, plotH)
+        // Top red accent line
+        ctx.fillStyle = 'rgba(239, 68, 68, 0.5)'
+        ctx.fillRect(x1, PADDING.top, x2 - x1, 2)
+      }
+    }
+
     // Draw HR curve (right Y-axis)
     if (hrData && hrData.length > 0 && videoStartEpoch) {
       const hrMin = Math.min(...hrData.map(r => r.hr))
@@ -260,6 +277,7 @@ export default function Timeline({ motionSignal, events, videoDuration, onSeek, 
         <span><span style={styles.dot('#ef4444')} />PLM</span>
         <span><span style={styles.dot('#f59e0b')} />Movement</span>
         {hrData && hrData.length > 0 && <span><span style={styles.dot('rgba(236,72,153,0.8)')} />HR</span>}
+        {events?.some(e => e.arousal?.has_arousal) && <span><span style={styles.dot('rgba(239,68,68,0.5)')} />Arousal</span>}
       </div>
       <canvas
         ref={canvasRef}

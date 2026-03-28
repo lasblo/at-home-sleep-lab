@@ -1,6 +1,6 @@
 import { useRef, useEffect, useState, useCallback, useImperativeHandle, forwardRef } from 'react'
 
-const SPEEDS = [1, 2, 4, 10]
+const SPEEDS = [1, 2, 4, 10, 20, 35, 50]
 
 const styles = {
   container: {

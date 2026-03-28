@@ -90,6 +90,15 @@ const styles = {
   debugVal: (pass) => ({
     color: pass === true ? '#22c55e' : pass === false ? '#ef4444' : 'var(--text-dim)',
   }),
+  arousalBadge: {
+    display: 'inline-block',
+    padding: '1px 5px',
+    borderRadius: 3,
+    fontSize: 10,
+    fontWeight: 600,
+    background: 'rgba(239, 68, 68, 0.2)',
+    color: '#ef4444',
+  },
 }
 
 function formatTime(sec) {
@@ -98,60 +107,88 @@ function formatTime(sec) {
   return `${m}:${s.toString().padStart(2, '0')}`
 }
 
-function DebugInfo({ debug }) {
-  if (!debug) return <span style={{ color: 'var(--text-dim)', fontSize: 10 }}>reanalyze to see debug info</span>
-
-  const d = debug
+function DebugInfo({ debug, arousal }) {
   return (
     <div>
-      <div>
-        <span style={styles.debugLabel}>signal:</span>
-        raw={d.raw_localized?.toFixed(4)}
-        {' → '}smoothed={d.smoothed?.toFixed(4)}
-        {' → '}baseline={d.baseline?.toFixed(4)}
-        {' → '}above_baseline={d.above_baseline?.toFixed(4)}
-      </div>
-      <div>
-        <span style={styles.debugLabel}>peak:</span>
-        <span style={styles.debugVal(d.normalized_height >= 0.02)}>
-          height={d.normalized_height?.toFixed(3)} (min 0.02)
-        </span>
-        {' '}
-        <span style={styles.debugVal(d.prominence >= 0.03)}>
-          prominence={d.prominence?.toFixed(3)} (min 0.03)
-        </span>
-      </div>
-      <div>
-        <span style={styles.debugLabel}>spatial variance:</span>
-        <span style={styles.debugVal(d.sv_passed)}>
-          sv_passed={d.sv_passed ? 'yes' : 'no'} (threshold {d.sv_threshold})
-        </span>
-      </div>
-      <div>
-        <span style={styles.debugLabel}>type:</span>
-        {d.body_classification}
-        {d.body_reason && <span> — {d.body_reason}</span>}
-      </div>
-      <div>
-        <span style={styles.debugLabel}>PLM eligible:</span>
-        <span style={styles.debugVal(d.plm_eligible)}>
-          {d.plm_eligible ? 'yes' : 'no'}
-        </span>
-        {d.plm_reject_reason && <span> — {d.plm_reject_reason}</span>}
-      </div>
-      {d.interval_to_prev_sec != null && (
-        <div>
-          <span style={styles.debugLabel}>interval to prev:</span>
-          <span style={styles.debugVal(d.interval_valid)}>
-            {d.interval_to_prev_sec}s
-          </span>
-          {d.interval_reason && <span> — {d.interval_reason}</span>}
+      {debug ? (
+        <>
+          <div>
+            <span style={styles.debugLabel}>signal:</span>
+            raw={debug.raw_localized?.toFixed(4)}
+            {' → '}smoothed={debug.smoothed?.toFixed(4)}
+            {' → '}baseline={debug.baseline?.toFixed(4)}
+            {' → '}above_baseline={debug.above_baseline?.toFixed(4)}
+          </div>
+          <div>
+            <span style={styles.debugLabel}>peak:</span>
+            <span style={styles.debugVal(debug.normalized_height >= 0.02)}>
+              height={debug.normalized_height?.toFixed(3)} (min 0.02)
+            </span>
+            {' '}
+            <span style={styles.debugVal(debug.prominence >= 0.03)}>
+              prominence={debug.prominence?.toFixed(3)} (min 0.03)
+            </span>
+          </div>
+          <div>
+            <span style={styles.debugLabel}>spatial variance:</span>
+            <span style={styles.debugVal(debug.sv_passed)}>
+              sv_passed={debug.sv_passed ? 'yes' : 'no'} (threshold {debug.sv_threshold})
+            </span>
+          </div>
+          <div>
+            <span style={styles.debugLabel}>type:</span>
+            {debug.body_classification}
+            {debug.body_reason && <span> — {debug.body_reason}</span>}
+          </div>
+          <div>
+            <span style={styles.debugLabel}>PLM eligible:</span>
+            <span style={styles.debugVal(debug.plm_eligible)}>
+              {debug.plm_eligible ? 'yes' : 'no'}
+            </span>
+            {debug.plm_reject_reason && <span> — {debug.plm_reject_reason}</span>}
+          </div>
+          {debug.interval_to_prev_sec != null && (
+            <div>
+              <span style={styles.debugLabel}>interval to prev:</span>
+              <span style={styles.debugVal(debug.interval_valid)}>
+                {debug.interval_to_prev_sec}s
+              </span>
+              {debug.interval_reason && <span> — {debug.interval_reason}</span>}
+            </div>
+          )}
+          <div>
+            <span style={styles.debugLabel}>PLM series:</span>
+            {debug.plm_series_reason}
+          </div>
+        </>
+      ) : (
+        <span style={{ color: 'var(--text-dim)', fontSize: 10 }}>reanalyze to see debug info</span>
+      )}
+      {arousal && (
+        <div style={{ marginTop: 4, paddingTop: 4, borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+          <span style={styles.debugLabel}>cardiac arousal:</span>
+          {arousal.has_arousal ? (
+            <>
+              <span style={styles.debugVal(true)}>detected</span>
+              {' — '}baseline={arousal.pre_baseline_hr} bpm → peak={arousal.peak_hr} bpm
+              {' (+'}
+              <span style={{ color: '#ef4444' }}>{arousal.magnitude_bpm} bpm, {arousal.magnitude_pct}%</span>
+              {') '}
+              onset={arousal.onset_delay_sec}s, duration={arousal.duration_sec}s,
+              {' '}threshold={arousal.threshold_used}
+              {arousal.strict_threshold_met && <span style={{ color: '#f59e0b' }}> [strict met]</span>}
+            </>
+          ) : arousal.has_arousal === false ? (
+            <>
+              <span style={styles.debugVal(false)}>not detected</span>
+              {arousal.reason && <span> — {arousal.reason}</span>}
+              {arousal.pre_baseline_hr && <span> (baseline={arousal.pre_baseline_hr} bpm)</span>}
+            </>
+          ) : (
+            <span style={{ color: 'var(--text-dim)' }}>no HR data</span>
+          )}
         </div>
       )}
-      <div>
-        <span style={styles.debugLabel}>PLM series:</span>
-        {d.plm_series_reason}
-      </div>
     </div>
   )
 }
@@ -203,6 +240,7 @@ export default function EventList({ events, currentTime, onSeek }) {
             <th style={styles.th}>Series</th>
             <th style={styles.th}>Amplitude</th>
             <th style={styles.th}>SV</th>
+            <th style={styles.th}>Arousal</th>
           </tr>
         </thead>
         <tbody>
@@ -234,11 +272,20 @@ export default function EventList({ events, currentTime, onSeek }) {
                 <td style={styles.td}>{e.series_id || '—'}</td>
                 <td style={styles.td}>{(e.amplitude * 100).toFixed(1)}</td>
                 <td style={styles.td}>{e.spatial_variance?.toFixed(2)}</td>
+                <td style={styles.td}>
+                  {e.arousal?.has_arousal ? (
+                    <span style={styles.arousalBadge}>+{e.arousal.magnitude_bpm?.toFixed(0)}</span>
+                  ) : e.arousal === null ? (
+                    <span style={{ color: 'rgba(255,255,255,0.15)' }}>—</span>
+                  ) : e.is_plm && e.arousal?.has_arousal === false ? (
+                    <span style={{ color: 'rgba(255,255,255,0.2)', fontSize: 10 }}>none</span>
+                  ) : null}
+                </td>
               </tr>,
               expandedIdx === i && (
                 <tr key={`debug-${i}`} style={styles.debugRow}>
-                  <td colSpan={6} style={styles.debugCell}>
-                    <DebugInfo debug={e.debug} />
+                  <td colSpan={7} style={styles.debugCell}>
+                    <DebugInfo debug={e.debug} arousal={e.arousal} />
                   </td>
                 </tr>
               )

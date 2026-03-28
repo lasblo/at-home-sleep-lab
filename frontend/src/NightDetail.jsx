@@ -201,6 +201,18 @@ export default function NightDetail({ nightData, onBack, onSelectVideo, selected
             <strong>{s.body_movements || 0}</strong>
             <span style={styles.statLabel}>Body Moves</span>
           </span>
+          {nightData.arousal_summary && (
+            <>
+              <span style={styles.stat}>
+                <strong style={{ color: plmiColor(nightData.arousal_summary.plmai) }}>{nightData.arousal_summary.plmai}</strong>
+                <span style={styles.statLabel}>PLMAI</span>
+              </span>
+              <span style={styles.stat}>
+                <strong>{nightData.arousal_summary.arousal_percentage}%</strong>
+                <span style={styles.statLabel}>Arousal</span>
+              </span>
+            </>
+          )}
           <span style={styles.stat}>
             <strong>{nightData.total_hours}h</strong>
             <span style={styles.statLabel}>Recorded</span>
