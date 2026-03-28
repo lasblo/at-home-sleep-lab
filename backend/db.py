@@ -465,11 +465,15 @@ async def get_all_settings() -> dict[str, dict]:
 
 async def create_session(session_id: str, night_date: str, started_at: str,
                          hr_enabled: bool, camera_id: str | None) -> dict:
+    from datetime import datetime, date
     pool = await get_pool()
+    # asyncpg needs proper datetime/date objects, not strings
+    started_dt = datetime.fromisoformat(started_at)
+    night_dt = date.fromisoformat(night_date) if isinstance(night_date, str) else night_date
     await pool.execute("""
         INSERT INTO sessions (id, status, started_at, night_date, hr_enabled, unifi_camera_id)
         VALUES ($1, 'recording', $2, $3, $4, $5)
-    """, session_id, started_at, night_date, hr_enabled, camera_id)
+    """, session_id, started_dt, night_dt, hr_enabled, camera_id)
     return await get_session(session_id)
 
 
