@@ -4,9 +4,7 @@ WHOOP Heart Rate BLE listener.
 Run this from Terminal.app (not from Claude Code) because macOS requires
 Bluetooth permissions via the calling app's Info.plist.
 
-Usage:
-    cd /Users/lasse/workspace/sleep_analysis
-    .venv/bin/python backend/whoop_hr.py
+Usage: .venv/bin/python backend/whoop_hr.py
 
 Writes live HR data to output/hr_live.jsonl (one JSON line per reading).
 The FastAPI backend reads this file to serve HR data to the frontend.

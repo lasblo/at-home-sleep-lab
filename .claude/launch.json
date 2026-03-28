@@ -4,13 +4,13 @@
     {
       "name": "backend",
       "runtimeExecutable": "bash",
-      "runtimeArgs": ["-c", "cd /Users/lasse/workspace/sleep_analysis/backend && /Users/lasse/workspace/sleep_analysis/.venv/bin/python -m uvicorn main:app --reload --host 0.0.0.0 --port 8000"],
+      "runtimeArgs": ["-c", "cd backend && .venv/bin/python -m uvicorn main:app --reload --host 0.0.0.0 --port 8000"],
       "port": 8000
     },
     {
       "name": "frontend",
       "runtimeExecutable": "bash",
-      "runtimeArgs": ["-c", "cd /Users/lasse/workspace/sleep_analysis/frontend && npm run dev"],
+      "runtimeArgs": ["-c", "cd frontend && npm run dev"],
       "port": 5173
     }
   ]
