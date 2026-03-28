@@ -6,7 +6,11 @@ import threading
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException, Request
+import signal
+import subprocess
+import sys
+
+from fastapi import FastAPI, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 
@@ -577,6 +581,75 @@ async def hr_for_night(night_date: str):
     readings = _read_hr_files(start_epoch=start, end_epoch=end)
     readings.sort(key=lambda r: r["epoch"])
     return {"readings": readings, "night_date": night_date, "count": len(readings)}
+
+
+# --- Video Upload ---
+
+@app.post("/api/upload")
+async def upload_videos(files: list[UploadFile]):
+    """Upload one or more MP4 video files."""
+    saved = []
+    for file in files:
+        if not file.filename or not file.filename.lower().endswith(".mp4"):
+            continue
+        dest = VIDEOS_DIR / file.filename
+        # Don't overwrite existing files
+        if dest.exists():
+            saved.append({"filename": file.filename, "status": "exists"})
+            continue
+        content = await file.read()
+        with open(dest, "wb") as f:
+            f.write(content)
+        saved.append({"filename": file.filename, "status": "uploaded", "size": len(content)})
+    return {"uploaded": saved, "count": len(saved)}
+
+
+# --- HR Listener Management ---
+
+_hr_process: subprocess.Popen | None = None
+
+
+@app.post("/api/hr/start")
+async def hr_start():
+    """Start the WHOOP HR listener as a background subprocess."""
+    global _hr_process
+    if _hr_process and _hr_process.poll() is None:
+        return {"status": "already_running", "pid": _hr_process.pid}
+
+    hr_script = Path(__file__).parent / "whoop_hr.py"
+    if not hr_script.exists():
+        raise HTTPException(404, "whoop_hr.py not found")
+
+    _hr_process = subprocess.Popen(
+        [sys.executable, str(hr_script)],
+        cwd=str(BASE_DIR),
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    return {"status": "started", "pid": _hr_process.pid}
+
+
+@app.post("/api/hr/stop")
+async def hr_stop():
+    """Stop the WHOOP HR listener subprocess."""
+    global _hr_process
+    if not _hr_process or _hr_process.poll() is not None:
+        _hr_process = None
+        return {"status": "not_running"}
+
+    _hr_process.send_signal(signal.SIGTERM)
+    try:
+        _hr_process.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        _hr_process.kill()
+    pid = _hr_process.pid
+    _hr_process = None
+
+    # Clear status file
+    if HR_STATUS_FILE.exists():
+        HR_STATUS_FILE.unlink()
+
+    return {"status": "stopped", "pid": pid}
 
 
 if __name__ == "__main__":

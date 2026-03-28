@@ -1,11 +1,14 @@
 import { useMemo } from "react"
 import { useNavigate } from "react-router-dom"
-import { useQuery } from "@tanstack/react-query"
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { useNights } from "@/features/dashboard/hooks/use-nights"
 import { PageHeader } from "@/shared/components/page-header"
 import { StatCard } from "@/shared/components/stat-card"
 import { PlmiBadge } from "@/shared/components/plmi-badge"
 import { MetricChart } from "@/features/dashboard/components/metric-chart"
+import { Button } from "@/components/ui/button"
+import { Spinner } from "@/components/ui/spinner"
+import { toast } from "sonner"
 import {
   Card,
   CardContent,
@@ -30,11 +33,12 @@ import {
   EmptyTitle,
   EmptyDescription,
 } from "@/components/ui/empty"
-import { Heart, Wifi, WifiOff } from "lucide-react"
+import { Heart, Wifi, WifiOff, Play, Square } from "lucide-react"
 import { formatDate } from "@/shared/lib/utils"
 
 export default function HeartRatePage() {
   const navigate = useNavigate()
+  const queryClient = useQueryClient()
   const { data: nights, isLoading: nightsLoading } = useNights()
   const { data: hrStatus } = useQuery({
     queryKey: ["hr", "status"],
@@ -43,7 +47,41 @@ export default function HeartRatePage() {
       if (!res.ok) throw new Error("Failed to fetch HR status")
       return res.json()
     },
+    refetchInterval: (query) => {
+      const data = query.state.data
+      return data?.status === "connected" ? 5000 : 10000
+    },
   })
+
+  const startHR = useMutation({
+    mutationFn: async () => {
+      const res = await fetch("/api/hr/start", { method: "POST" })
+      return res.json()
+    },
+    onSuccess: (data) => {
+      if (data.status === "already_running") {
+        toast.info("HR monitor is already running")
+      } else {
+        toast.success("HR monitor started")
+      }
+      queryClient.invalidateQueries({ queryKey: ["hr", "status"] })
+    },
+    onError: () => toast.error("Failed to start HR monitor"),
+  })
+
+  const stopHR = useMutation({
+    mutationFn: async () => {
+      const res = await fetch("/api/hr/stop", { method: "POST" })
+      return res.json()
+    },
+    onSuccess: () => {
+      toast.success("HR monitor stopped")
+      queryClient.invalidateQueries({ queryKey: ["hr", "status"] })
+    },
+    onError: () => toast.error("Failed to stop HR monitor"),
+  })
+
+  const isConnected = hrStatus?.status === "connected"
 
   const arousalNights = useMemo(
     () =>
@@ -102,16 +140,20 @@ export default function HeartRatePage() {
         description="Cardiac arousal monitoring via WHOOP"
       />
 
-      {/* Connection status */}
+      {/* Connection status + controls */}
       <Card>
         <CardHeader>
-          <CardTitle className="text-sm">WHOOP Connection</CardTitle>
+          <CardTitle className="text-sm">WHOOP Heart Rate Monitor</CardTitle>
+          <CardDescription>
+            Bluetooth LE connection to your WHOOP band for cardiac arousal
+            detection during sleep recordings.
+          </CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="flex items-center gap-3">
-            {hrStatus?.status === "connected" ? (
+          <div className="flex items-center gap-4">
+            {isConnected ? (
               <>
-                <Wifi className="text-severity-normal" />
+                <Wifi className="size-5 text-severity-normal" />
                 <div className="flex flex-col gap-0.5">
                   <div className="flex items-center gap-2">
                     <Badge
@@ -123,21 +165,48 @@ export default function HeartRatePage() {
                     <span className="text-sm">{hrStatus.device}</span>
                   </div>
                   {hrStatus.hr && (
-                    <span className="text-sm tabular-nums text-muted-foreground">
-                      Current: {hrStatus.hr} bpm
+                    <span className="text-lg font-semibold tabular-nums text-chart-3">
+                      {hrStatus.hr} bpm
                     </span>
                   )}
                 </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="ml-auto"
+                  onClick={() => stopHR.mutate()}
+                  disabled={stopHR.isPending}
+                >
+                  {stopHR.isPending ? (
+                    <Spinner data-icon="inline-start" />
+                  ) : (
+                    <Square data-icon="inline-start" />
+                  )}
+                  Stop Monitoring
+                </Button>
               </>
             ) : (
               <>
-                <WifiOff className="text-muted-foreground" />
+                <WifiOff className="size-5 text-muted-foreground" />
                 <div className="flex flex-col gap-0.5">
                   <Badge variant="outline">Not Connected</Badge>
                   <span className="text-xs text-muted-foreground">
-                    Run: python backend/whoop_hr.py from Terminal
+                    Start monitoring to collect heart rate data during sleep.
                   </span>
                 </div>
+                <Button
+                  size="sm"
+                  className="ml-auto"
+                  onClick={() => startHR.mutate()}
+                  disabled={startHR.isPending}
+                >
+                  {startHR.isPending ? (
+                    <Spinner data-icon="inline-start" />
+                  ) : (
+                    <Play data-icon="inline-start" />
+                  )}
+                  Start Monitoring
+                </Button>
               </>
             )}
           </div>

@@ -4,6 +4,7 @@ import { useVideos } from "./hooks/use-videos"
 import { useProcessing } from "@/features/processing/hooks/use-processing"
 import { PageHeader } from "@/shared/components/page-header"
 import { ProcessButton } from "@/features/processing/components/process-button"
+import { UploadZone } from "./components/upload-zone"
 import {
   Table,
   TableBody,
@@ -49,17 +50,7 @@ export default function VideosPage() {
         <PageHeader title="Videos">
           <ProcessButton />
         </PageHeader>
-        <Empty className="min-h-[400px]">
-          <EmptyMedia variant="icon">
-            <Video />
-          </EmptyMedia>
-          <EmptyHeader>
-            <EmptyTitle>No videos found</EmptyTitle>
-            <EmptyDescription>
-              Add MP4 files to the videos/ directory.
-            </EmptyDescription>
-          </EmptyHeader>
-        </Empty>
+        <UploadZone />
       </div>
     )
   }
@@ -81,6 +72,8 @@ export default function VideosPage() {
       >
         <ProcessButton />
       </PageHeader>
+
+      <UploadZone />
 
       <ToggleGroup
         type="single"
