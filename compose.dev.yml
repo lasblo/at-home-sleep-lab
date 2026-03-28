@@ -1,17 +1,35 @@
 services:
+  db:
+    image: postgres:16-alpine
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: sleeplab
+      POSTGRES_USER: sleeplab
+      POSTGRES_PASSWORD: sleeplab
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: pg_isready -U sleeplab
+      interval: 5s
+      retries: 5
+
   backend:
     build: ./backend
     ports:
       - "8000:8000"
     environment:
+      - DATABASE_URL=postgresql://sleeplab:sleeplab@db:5432/sleeplab
       - VIDEOS_DIR=/data/videos
-      - OUTPUT_DIR=/data/output
-      - DATA_DIR=/data
+      - HR_INPUT_DIR=/data/hr_input
     volumes:
       - ./backend:/app
       - videos:/data/videos
-      - output:/data/output
+      - ./hr_input:/data/hr_input
     command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+    depends_on:
+      db:
+        condition: service_healthy
 
   dashboard:
     image: node:22-alpine
@@ -30,5 +48,5 @@ services:
 
 volumes:
   videos:
-  output:
+  pgdata:
   dashboard_node_modules:

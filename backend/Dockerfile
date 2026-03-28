@@ -8,12 +8,11 @@ RUN apt-get update && \
     rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt bleak
+RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
-# videos/ and output/ are mounted as volumes
-RUN mkdir -p /data/videos /data/output
+RUN mkdir -p /data/videos /data/hr_input
 
 EXPOSE 8000
 

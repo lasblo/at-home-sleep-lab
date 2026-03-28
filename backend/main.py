@@ -1,53 +1,52 @@
+import asyncio
+import hashlib
 import json
 import multiprocessing
 import os
 import re
-import threading
-from concurrent.futures import ProcessPoolExecutor, as_completed
-from pathlib import Path
-
 import signal
 import subprocess
 import sys
+import threading
+from concurrent.futures import ProcessPoolExecutor, as_completed
+from contextlib import asynccontextmanager
+from datetime import datetime
+from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 
+import db
 from filename_parser import parse_filename
 from nights import group_videos_into_nights, compute_night_summary
 from pipeline import process_video
 from plms import apply_plms_criteria
+from arousal import compute_video_arousal
 
 # Parallel workers for batch processing
 MAX_WORKERS = max(2, (os.cpu_count() or 4) // 2)
 
-app = FastAPI(title="PLMS Detector")
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-BASE_DIR = Path(os.environ.get("DATA_DIR", str(Path(__file__).resolve().parent.parent)))
-VIDEOS_DIR = Path(os.environ.get("VIDEOS_DIR", str(BASE_DIR / "videos")))
-OUTPUT_DIR = Path(os.environ.get("OUTPUT_DIR", str(BASE_DIR / "output")))
+VIDEOS_DIR = Path(os.environ.get("VIDEOS_DIR", str(Path(__file__).resolve().parent.parent / "videos")))
+HR_INPUT_DIR = Path(os.environ.get("HR_INPUT_DIR", str(Path(__file__).resolve().parent.parent / "hr_input")))
 VIDEOS_DIR.mkdir(parents=True, exist_ok=True)
-OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+HR_INPUT_DIR.mkdir(parents=True, exist_ok=True)
 
-# Processing state
+HR_STATUS_FILE = HR_INPUT_DIR / "hr_status.json"
+
+# Processing state (in-memory, not persisted)
 _processing = {"running": False, "progress": {}, "error": None}
+
+# HR ingestion background task
+_hr_ingest_task: asyncio.Task | None = None
 
 
 def _video_id(filename: str) -> str:
-    """Stable ID from filename using hashlib (deterministic across runs)."""
-    import hashlib
     return hashlib.md5(filename.encode()).hexdigest()[:10]
 
 
-def _list_videos() -> list[dict]:
-    """List all MP4 files with parsed metadata."""
+def _scan_videos() -> list[dict]:
+    """Scan video files on disk and return parsed metadata."""
     videos = []
     for f in sorted(VIDEOS_DIR.glob("*.mp4")):
         try:
@@ -64,6 +63,47 @@ def _list_videos() -> list[dict]:
             "duration_sec": parsed["duration_sec"],
         })
     return videos
+
+
+async def _sync_videos_to_db():
+    """Ensure all video files on disk have entries in the database."""
+    for v in _scan_videos():
+        await db.upsert_video(v)
+
+
+async def _hr_ingest_loop():
+    """Background task: periodically import HR readings from JSONL into DB."""
+    while True:
+        try:
+            count = await db.ingest_hr_readings(HR_INPUT_DIR)
+            if count > 0:
+                pass  # imported readings
+        except Exception:
+            pass
+        await asyncio.sleep(30)
+
+
+# --- App lifecycle ---
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    global _hr_ingest_task
+    await db.init_db()
+    await _sync_videos_to_db()
+    _hr_ingest_task = asyncio.create_task(_hr_ingest_loop())
+    yield
+    if _hr_ingest_task:
+        _hr_ingest_task.cancel()
+    await db.close_db()
+
+
+app = FastAPI(title="PLMS Detector", lifespan=lifespan)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 # --- Video serving with Range support ---
@@ -90,8 +130,7 @@ async def serve_video(filename: str, request: Request):
             data = f.read(end - start + 1)
 
         return Response(
-            content=data,
-            status_code=206,
+            content=data, status_code=206,
             headers={
                 "Content-Range": f"bytes {start}-{end}/{file_size}",
                 "Accept-Ranges": "bytes",
@@ -100,12 +139,10 @@ async def serve_video(filename: str, request: Request):
             },
         )
 
-    # No range — return first 2MB chunk with accept-ranges header
     with open(path, "rb") as f:
         data = f.read(2 * 1024 * 1024)
     return Response(
-        content=data,
-        status_code=200,
+        content=data, status_code=200,
         headers={
             "Accept-Ranges": "bytes",
             "Content-Length": str(file_size),
@@ -117,40 +154,54 @@ async def serve_video(filename: str, request: Request):
 # --- Processing ---
 
 def _process_one_video(args):
-    """Worker function for parallel processing. Must be top-level for pickling."""
-    video_path_str, vid, output_dir_str, progress_dict = args
+    """Worker function for parallel processing."""
+    video_path_str, vid, progress_dict = args
     from pipeline import process_video
     from pathlib import Path
-
-    video_path = Path(video_path_str)
 
     def progress_cb(pct):
         progress_dict[vid] = pct
 
-    result = process_video(video_path, progress_cb)
+    result = process_video(Path(video_path_str), progress_cb)
     return vid, result
+
+
+def _save_results_sync(video_meta, result):
+    """Save processing results to DB (called from sync thread via asyncio.run)."""
+    recording_hours = video_meta["duration_sec"] / 3600.0
+    plms_result = apply_plms_criteria(result["events"], recording_hours)
+
+    import asyncio
+    asyncio.run(db.save_video_results(
+        video_meta, result["video_info"], result["motion_signal"],
+        plms_result["events"], plms_result["series"], plms_result["summary"],
+    ))
 
 
 def _run_processing():
     try:
-        videos = _list_videos()
-        # Skip already-processed videos
-        to_process = [v for v in videos if not (OUTPUT_DIR / f"{v['id']}.json").exists()]
+        videos = _scan_videos()
+        # Check which are already processed
+        import asyncio
+        processed_set = set()
+        for v in videos:
+            if asyncio.run(db.is_video_processed(v["id"])):
+                processed_set.add(v["id"])
+
+        to_process = [v for v in videos if v["id"] not in processed_set]
 
         manager = multiprocessing.Manager()
         shared_progress = manager.dict({v["id"]: 0.0 for v in to_process})
-        # Mark already-done videos as 1.0
         for v in videos:
-            if v not in to_process:
+            if v["id"] in processed_set:
                 shared_progress[v["id"]] = 1.0
         _processing["progress"] = shared_progress
 
         if not to_process:
-            _write_combined(videos)
             return
 
         worker_args = [
-            (str(VIDEOS_DIR / v["filename"]), v["id"], str(OUTPUT_DIR), shared_progress)
+            (str(VIDEOS_DIR / v["filename"]), v["id"], shared_progress)
             for v in to_process
         ]
 
@@ -168,23 +219,8 @@ def _run_processing():
                     continue
 
                 v = next(v for v in videos if v["id"] == vid)
-
-                recording_hours = v["duration_sec"] / 3600.0
-                plms_result = apply_plms_criteria(result["events"], recording_hours)
-                output = {
-                    "video": v,
-                    "video_info": result["video_info"],
-                    "motion_signal": result["motion_signal"],
-                    **plms_result,
-                }
-
-                out_path = OUTPUT_DIR / f"{vid}.json"
-                with open(out_path, "w") as f:
-                    json.dump(output, f)
-
+                _save_results_sync(v, result)
                 shared_progress[vid] = 1.0
-
-        _write_combined(videos)
 
     except Exception as e:
         _processing["error"] = str(e)
@@ -193,89 +229,40 @@ def _run_processing():
         _processing["running"] = False
 
 
-def _write_combined(videos):
-    """Write combined.json from all processed video outputs."""
-    all_events = []
-    total_hours = 0.0
+def _run_single_processing(video_id: str):
+    try:
+        videos = _scan_videos()
+        v = next((v for v in videos if v["id"] == video_id), None)
+        if not v:
+            _processing["error"] = f"Video {video_id} not found"
+            return
 
-    for v in sorted(videos, key=lambda v: v["start_local"]):
-        vid = v["id"]
-        out_path = OUTPUT_DIR / f"{vid}.json"
-        if not out_path.exists():
-            continue
-        data = json.load(open(out_path))
-        recording_hours = v["duration_sec"] / 3600.0
-        all_events.extend([
-            {**e, "video_id": vid, "absolute_sec": e["timestamp_sec"] + total_hours * 3600}
-            for e in data["events"]
-        ])
-        total_hours += recording_hours
+        _processing["progress"] = {video_id: 0.0}
 
-    total_plm = sum(1 for e in all_events if e.get("is_plm"))
-    combined = {
-        "videos": videos,
-        "total_hours": round(total_hours, 2),
-        "total_movements": len(all_events),
-        "plm_count": total_plm,
-        "plmi": round(total_plm / total_hours, 1) if total_hours > 0 else 0,
-        "series_count": sum(
-            len(json.load(open(OUTPUT_DIR / f"{v['id']}.json")).get("series", []))
-            for v in videos
-            if (OUTPUT_DIR / f"{v['id']}.json").exists()
-        ),
-    }
-    with open(OUTPUT_DIR / "combined.json", "w") as f:
-        json.dump(combined, f)
+        def progress_cb(pct):
+            _processing["progress"][video_id] = pct
+
+        result = process_video(VIDEOS_DIR / v["filename"], progress_cb)
+        _save_results_sync(v, result)
+        _processing["progress"][video_id] = 1.0
+
+    except Exception as e:
+        _processing["error"] = str(e)
+        raise
+    finally:
+        _processing["running"] = False
 
 
 @app.post("/api/process")
 async def start_processing():
     if _processing["running"]:
         return {"status": "already_running"}
+    await _sync_videos_to_db()
     _processing["running"] = True
     _processing["error"] = None
     _processing["progress"] = {}
-    thread = threading.Thread(target=_run_processing, daemon=True)
-    thread.start()
+    threading.Thread(target=_run_processing, daemon=True).start()
     return {"status": "started"}
-
-
-def _run_single_processing(video_id: str):
-    try:
-        videos = _list_videos()
-        v = next((v for v in videos if v["id"] == video_id), None)
-        if not v:
-            _processing["error"] = f"Video {video_id} not found"
-            return
-
-        vid = v["id"]
-        _processing["progress"] = {vid: 0.0}
-        video_path = VIDEOS_DIR / v["filename"]
-
-        def progress_cb(pct, _vid=vid):
-            _processing["progress"][_vid] = pct
-
-        result = process_video(video_path, progress_cb)
-        recording_hours = v["duration_sec"] / 3600.0
-        plms_result = apply_plms_criteria(result["events"], recording_hours)
-        output = {
-            "video": v,
-            "video_info": result["video_info"],
-            "motion_signal": result["motion_signal"],
-            **plms_result,
-        }
-
-        out_path = OUTPUT_DIR / f"{vid}.json"
-        with open(out_path, "w") as f:
-            json.dump(output, f)
-
-        _processing["progress"][vid] = 1.0
-
-    except Exception as e:
-        _processing["error"] = str(e)
-        raise
-    finally:
-        _processing["running"] = False
 
 
 @app.post("/api/process/{video_id}")
@@ -285,14 +272,12 @@ async def start_single_processing(video_id: str):
     _processing["running"] = True
     _processing["error"] = None
     _processing["progress"] = {}
-    thread = threading.Thread(target=_run_single_processing, args=(video_id,), daemon=True)
-    thread.start()
+    threading.Thread(target=_run_single_processing, args=(video_id,), daemon=True).start()
     return {"status": "started"}
 
 
 @app.post("/api/reanalyze/{video_id}")
 async def reanalyze_video(video_id: str):
-    """Reprocess a single video, overwriting existing output with full debug decision chain."""
     if _processing["running"]:
         return {"status": "already_running"}
     _processing["running"] = True
@@ -301,110 +286,63 @@ async def reanalyze_video(video_id: str):
 
     def run():
         try:
-            videos = _list_videos()
-            v = next((v for v in videos if v["id"] == video_id), None)
-            if not v:
-                _processing["error"] = f"Video {video_id} not found"
-                return
-
-            video_path = VIDEOS_DIR / v["filename"]
-
-            def progress_cb(pct):
-                _processing["progress"][video_id] = pct
-
-            # Always use Python pipeline for reanalysis (includes debug chain)
-            result = process_video(video_path, progress_cb)
-            recording_hours = v["duration_sec"] / 3600.0
-            plms_result = apply_plms_criteria(result["events"], recording_hours)
-
-            output = {
-                "video": v,
-                "video_info": result["video_info"],
-                "motion_signal": result["motion_signal"],
-                **plms_result,
-            }
-
-            out_path = OUTPUT_DIR / f"{video_id}.json"
-            with open(out_path, "w") as f:
-                json.dump(output, f)
-
-            _processing["progress"][video_id] = 1.0
-            # Rebuild combined
-            _write_combined(videos)
+            import asyncio
+            asyncio.run(db.delete_video_results(video_id))
+            _run_single_processing(video_id)
         except Exception as e:
             _processing["error"] = str(e)
         finally:
             _processing["running"] = False
 
-    thread = threading.Thread(target=run, daemon=True)
-    thread.start()
+    threading.Thread(target=run, daemon=True).start()
     return {"status": "started"}
 
 
 @app.post("/api/reprocess-night/{night_date}")
 async def reprocess_night(night_date: str):
-    """Reprocess all videos for a given night date (e.g. 2026-03-26)."""
     if _processing["running"]:
         return {"status": "already_running"}
 
-    videos = _list_videos()
+    videos = await db.list_videos()
     nights = group_videos_into_nights(videos)
     night = next((n for n in nights if n["night_date"] == night_date), None)
     if not night:
         return {"status": "error", "error": f"Night {night_date} not found"}
 
     video_ids = night["video_ids"]
-
     _processing["running"] = True
     _processing["error"] = None
     _processing["progress"] = {vid: 0.0 for vid in video_ids}
 
     def run():
         try:
+            import asyncio
             for vid in video_ids:
-                v = next((v for v in videos if v["id"] == vid), None)
+                asyncio.run(db.delete_video_results(vid))
+
+            all_videos = _scan_videos()
+            for vid in video_ids:
+                v = next((v for v in all_videos if v["id"] == vid), None)
                 if not v:
                     continue
-
-                # Delete existing output
-                out_path = OUTPUT_DIR / f"{vid}.json"
-                if out_path.exists():
-                    out_path.unlink()
-
-                video_path = VIDEOS_DIR / v["filename"]
 
                 def progress_cb(pct, _vid=vid):
                     _processing["progress"][_vid] = pct
 
-                result = process_video(video_path, progress_cb)
-                recording_hours = v["duration_sec"] / 3600.0
-                plms_result = apply_plms_criteria(result["events"], recording_hours)
-                output = {
-                    "video": v,
-                    "video_info": result["video_info"],
-                    "motion_signal": result["motion_signal"],
-                    **plms_result,
-                }
-
-                with open(out_path, "w") as f:
-                    json.dump(output, f)
-
+                result = process_video(VIDEOS_DIR / v["filename"], progress_cb)
+                _save_results_sync(v, result)
                 _processing["progress"][vid] = 1.0
-
-            _write_combined(videos)
         except Exception as e:
             _processing["error"] = str(e)
         finally:
             _processing["running"] = False
 
-    thread = threading.Thread(target=run, daemon=True)
-    thread.start()
+    threading.Thread(target=run, daemon=True).start()
     return {"status": "started", "video_count": len(video_ids)}
 
 
 @app.get("/api/process/status")
 async def processing_status():
-    # Convert Manager dict to plain dict for JSON serialization
     progress = _processing["progress"]
     return {
         "running": _processing["running"],
@@ -417,41 +355,49 @@ async def processing_status():
 
 @app.get("/api/results")
 async def list_results():
-    videos = _list_videos()
-    results = []
-    for v in videos:
-        out_path = OUTPUT_DIR / f"{v['id']}.json"
-        results.append({**v, "processed": out_path.exists()})
-    return results
+    return await db.list_videos()
 
 
 @app.get("/api/results/combined")
 async def combined_results():
-    path = OUTPUT_DIR / "combined.json"
-    if not path.exists():
-        raise HTTPException(404, "No results yet. Run processing first.")
-    with open(path) as f:
-        return json.load(f)
+    pool = await db.get_pool()
+    row = await pool.fetchrow("""
+        SELECT
+            COUNT(*) FILTER (WHERE processed) as video_count,
+            COALESCE(SUM(duration_sec) FILTER (WHERE processed), 0) / 3600.0 as total_hours,
+            (SELECT COUNT(*) FROM events) as total_movements,
+            (SELECT COUNT(*) FROM events WHERE is_plm) as plm_count,
+            (SELECT COUNT(DISTINCT (video_id, series_id)) FROM events WHERE series_id IS NOT NULL) as series_count
+        FROM videos
+    """)
+    total_hours = float(row["total_hours"])
+    plm_count = row["plm_count"]
+    return {
+        "total_hours": round(total_hours, 2),
+        "total_movements": row["total_movements"],
+        "plm_count": plm_count,
+        "plmi": round(plm_count / total_hours, 1) if total_hours > 0 else 0,
+        "series_count": row["series_count"],
+    }
 
 
 @app.get("/api/results/{video_id}")
 async def video_results(video_id: str):
-    path = OUTPUT_DIR / f"{video_id}.json"
-    if not path.exists():
+    data = await db.get_video_results(video_id)
+    if not data:
         raise HTTPException(404, "Results not found for this video")
-    with open(path) as f:
-        data = json.load(f)
 
-    # On-demand arousal annotation if HR data exists
-    from arousal import compute_video_arousal
-    hr_dir = OUTPUT_DIR / "hr"
+    # On-demand arousal annotation from DB HR readings
     video = data.get("video", {})
     start_local = video.get("start_local", "")
     duration = video.get("duration_sec", 3600)
-    if start_local and hr_dir.exists() and data.get("events"):
-        data["events"], data["arousal_summary"] = compute_video_arousal(
-            data["events"], start_local, hr_dir, duration
-        )
+    if start_local and data.get("events"):
+        start_epoch = datetime.fromisoformat(start_local).timestamp()
+        hr_readings = await db.get_hr_range(start_epoch - 60, start_epoch + duration + 60)
+        if hr_readings:
+            data["events"], data["arousal_summary"] = compute_video_arousal(
+                data["events"], start_local, hr_readings, duration
+            )
 
     return data
 
@@ -460,15 +406,14 @@ async def video_results(video_id: str):
 
 @app.get("/api/nights")
 async def list_nights():
-    """List all nights with summary stats and hourly distribution."""
-    videos = _list_videos()
+    videos = await db.list_videos()
     nights = group_videos_into_nights(videos)
     result = []
     for night in nights:
         videos_total = len(night["video_ids"])
         videos_processed = sum(
-            1 for vid in night["video_ids"]
-            if (OUTPUT_DIR / f"{vid}.json").exists()
+            1 for v in videos
+            if v["id"] in night["video_ids"] and v.get("processed")
         )
         base = {
             "night_date": night["night_date"],
@@ -480,7 +425,15 @@ async def list_nights():
             "videos_processed": videos_processed,
         }
         if videos_processed > 0:
-            summary = compute_night_summary(night, OUTPUT_DIR)
+            videos_info = await db.get_videos_for_ids(night["video_ids"])
+            events = await db.get_events_for_videos(night["video_ids"])
+
+            # Get HR readings for this night
+            night_start = datetime.fromisoformat(night["start_local"]).timestamp()
+            night_end = datetime.fromisoformat(night["end_local"]).timestamp()
+            hr_readings = await db.get_hr_range(night_start - 60, night_end + 60)
+
+            summary = compute_night_summary(night, videos_info, events, hr_readings or None)
             base["summary"] = summary["summary"]
             base["hourly_distribution"] = summary["hourly_distribution"]
             base["arousal_summary"] = summary.get("arousal_summary")
@@ -494,113 +447,75 @@ async def list_nights():
 
 @app.get("/api/nights/{night_date}")
 async def night_detail(night_date: str):
-    """Full detail for one night: merged events, series, hourly distribution."""
-    videos = _list_videos()
+    videos = await db.list_videos()
     nights = group_videos_into_nights(videos)
     night = next((n for n in nights if n["night_date"] == night_date), None)
     if not night:
         raise HTTPException(404, f"Night {night_date} not found")
-    return compute_night_summary(night, OUTPUT_DIR)
+
+    videos_info = await db.get_videos_for_ids(night["video_ids"])
+    events = await db.get_events_for_videos(night["video_ids"])
+
+    night_start = datetime.fromisoformat(night["start_local"]).timestamp()
+    night_end = datetime.fromisoformat(night["end_local"]).timestamp()
+    hr_readings = await db.get_hr_range(night_start - 60, night_end + 60)
+
+    return compute_night_summary(night, videos_info, events, hr_readings or None)
 
 
-# --- Heart Rate (WHOOP BLE) ---
-
-HR_DIR = OUTPUT_DIR / "hr"
-HR_STATUS_FILE = OUTPUT_DIR / "hr_status.json"
-
-
-def _read_hr_files(start_epoch: float = 0, end_epoch: float = float("inf")) -> list[dict]:
-    """Read HR readings from date-based JSONL files, filtered by epoch range.
-    Also checks legacy hr_live.jsonl for backward compatibility."""
-    readings = []
-
-    # Date-based files in output/hr/
-    if HR_DIR.exists():
-        for f in sorted(HR_DIR.glob("*.jsonl")):
-            for line in open(f):
-                line = line.strip()
-                if not line:
-                    continue
-                entry = json.loads(line)
-                if start_epoch <= entry["epoch"] <= end_epoch:
-                    readings.append(entry)
-
-    # Legacy file (if exists, for old data)
-    legacy = OUTPUT_DIR / "hr_live.jsonl"
-    if legacy.exists():
-        for line in open(legacy):
-            line = line.strip()
-            if not line:
-                continue
-            entry = json.loads(line)
-            if start_epoch <= entry["epoch"] <= end_epoch:
-                readings.append(entry)
-
-    return readings
-
+# --- Heart Rate ---
 
 @app.get("/api/hr/status")
 async def hr_status():
-    """Current HR listener status."""
-    # Check if our managed subprocess is alive
-    running = _hr_process is not None and _hr_process.poll() is None
-
     if HR_STATUS_FILE.exists():
-        data = json.loads(HR_STATUS_FILE.read_text())
-        data["managed"] = running
-        return data
-
-    return {"status": "stopped" if not running else "starting", "managed": running}
+        return json.loads(HR_STATUS_FILE.read_text())
+    return {"status": "stopped"}
 
 
 @app.get("/api/hr/live")
 async def hr_live(since: float = 0, limit: int = 500):
-    """Get HR readings since a given epoch timestamp. Returns newest first."""
-    readings = _read_hr_files(start_epoch=since)
-    readings.sort(key=lambda r: r["epoch"], reverse=True)
-    return {"readings": readings[:limit], "count": len(readings)}
+    readings = await db.get_hr_latest(since, limit)
+    return {"readings": readings, "count": len(readings)}
 
 
 @app.get("/api/hr/range")
 async def hr_range(start: str, end: str):
-    """Get HR readings between two ISO timestamps. For overlaying on video timeline."""
-    from datetime import datetime as dt
-    start_epoch = dt.fromisoformat(start).timestamp()
-    end_epoch = dt.fromisoformat(end).timestamp()
-    readings = _read_hr_files(start_epoch=start_epoch, end_epoch=end_epoch)
-    readings.sort(key=lambda r: r["epoch"])
+    start_epoch = datetime.fromisoformat(start).timestamp()
+    end_epoch = datetime.fromisoformat(end).timestamp()
+    readings = await db.get_hr_range(start_epoch, end_epoch)
     return {"readings": readings, "count": len(readings)}
 
 
 @app.get("/api/hr/night/{night_date}")
 async def hr_for_night(night_date: str):
-    """Get all HR readings for a specific night (between sleep start and end)."""
-    videos = _list_videos()
+    videos = await db.list_videos()
     nights = group_videos_into_nights(videos)
     night = next((n for n in nights if n["night_date"] == night_date), None)
     if not night:
         raise HTTPException(404, f"Night {night_date} not found")
 
-    from datetime import datetime
     start = datetime.fromisoformat(night["start_local"]).timestamp()
     end = datetime.fromisoformat(night["end_local"]).timestamp()
-
-    readings = _read_hr_files(start_epoch=start, end_epoch=end)
-    readings.sort(key=lambda r: r["epoch"])
+    readings = await db.get_hr_range(start, end)
     return {"readings": readings, "night_date": night_date, "count": len(readings)}
+
+
+@app.post("/api/hr/ingest")
+async def hr_ingest():
+    """Manually trigger HR data ingestion from JSONL files."""
+    count = await db.ingest_hr_readings(HR_INPUT_DIR)
+    return {"ingested": count}
 
 
 # --- Video Upload ---
 
 @app.post("/api/upload")
 async def upload_videos(files: list[UploadFile]):
-    """Upload one or more MP4 video files."""
     saved = []
     for file in files:
         if not file.filename or not file.filename.lower().endswith(".mp4"):
             continue
         dest = VIDEOS_DIR / file.filename
-        # Don't overwrite existing files
         if dest.exists():
             saved.append({"filename": file.filename, "status": "exists"})
             continue
@@ -608,6 +523,9 @@ async def upload_videos(files: list[UploadFile]):
         with open(dest, "wb") as f:
             f.write(content)
         saved.append({"filename": file.filename, "status": "uploaded", "size": len(content)})
+
+    # Sync new videos to DB
+    await _sync_videos_to_db()
     return {"uploaded": saved, "count": len(saved)}
 
 
@@ -618,7 +536,6 @@ _hr_process: subprocess.Popen | None = None
 
 @app.post("/api/hr/start")
 async def hr_start():
-    """Start the WHOOP HR listener as a background subprocess."""
     global _hr_process
     if _hr_process and _hr_process.poll() is None:
         return {"status": "already_running", "pid": _hr_process.pid}
@@ -629,24 +546,21 @@ async def hr_start():
 
     _hr_process = subprocess.Popen(
         [sys.executable, str(hr_script)],
-        cwd=str(BASE_DIR),
+        cwd=str(Path(__file__).resolve().parent.parent),
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
     )
 
-    # Wait briefly to see if it crashes immediately (e.g. no Bluetooth)
     import time
     time.sleep(2)
     if _hr_process.poll() is not None:
         stderr = _hr_process.stderr.read().decode() if _hr_process.stderr else ""
         _hr_process = None
-        # Extract just the last exception line, not the full traceback
         lines = [l for l in stderr.strip().splitlines() if l.strip()]
-        last_error = lines[-1] if lines else ""
         if "FileNotFoundError" in stderr or "dbus" in stderr.lower():
             msg = "Bluetooth not available. WHOOP monitoring requires running outside Docker on a host with Bluetooth."
-        elif last_error:
-            msg = last_error
+        elif lines:
+            msg = lines[-1]
         else:
             msg = "HR monitor process exited immediately."
         return {"status": "failed", "error": msg}
@@ -656,7 +570,6 @@ async def hr_start():
 
 @app.post("/api/hr/stop")
 async def hr_stop():
-    """Stop the WHOOP HR listener subprocess."""
     global _hr_process
     if not _hr_process or _hr_process.poll() is not None:
         _hr_process = None
@@ -670,7 +583,6 @@ async def hr_stop():
     pid = _hr_process.pid
     _hr_process = None
 
-    # Clear status file
     if HR_STATUS_FILE.exists():
         HR_STATUS_FILE.unlink()
 

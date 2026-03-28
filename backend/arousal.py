@@ -243,7 +243,7 @@ def _build_cluster(events: list[dict]) -> dict:
 def compute_night_arousal(
     events: list[dict],
     videos_info: list[dict],
-    hr_dir: Path,
+    hr_readings: list[dict] | None,
     recording_hours: float,
 ) -> dict:
     """Compute arousal annotations for all PLM events in a night.
@@ -251,7 +251,7 @@ def compute_night_arousal(
     Args:
         events: merged night events (with video_id, onset_sec video-relative)
         videos_info: list of video dicts with start_local, id
-        hr_dir: Path to output/hr/ directory
+        hr_readings: list of HR readings (epoch, hr) for the night, or None
         recording_hours: total recording hours for PLMAI calculation
 
     Returns:
@@ -268,14 +268,6 @@ def compute_night_arousal(
 
     if not video_epoch_map:
         return {"events": events, "arousal_summary": None}
-
-    # Determine night epoch range for HR loading
-    all_video_epochs = list(video_epoch_map.values())
-    night_start_epoch = min(all_video_epochs) - 60
-    night_end_epoch = max(all_video_epochs) + max((v.get("duration_sec", 3600) for v in videos_info), default=3600) + 60
-
-    # Load HR data for the night
-    hr_readings = load_hr_for_range(hr_dir, night_start_epoch, night_end_epoch)
 
     if not hr_readings:
         # No HR data — mark all events as no-data
@@ -370,10 +362,13 @@ def compute_night_arousal(
 def compute_video_arousal(
     events: list[dict],
     video_start_local: str,
-    hr_dir: Path,
+    hr_readings: list[dict] | None,
     video_duration_sec: float,
 ) -> tuple[list[dict], dict | None]:
     """Compute arousal for a single video's events.
+
+    Args:
+        hr_readings: list of HR readings (epoch, hr) for the video's time range, or None
 
     Returns (annotated_events, arousal_summary or None).
     """
@@ -381,8 +376,6 @@ def compute_video_arousal(
         video_start_epoch = datetime.fromisoformat(video_start_local).timestamp()
     except ValueError:
         return events, None
-
-    hr_readings = load_hr_for_range(hr_dir, video_start_epoch - 60, video_start_epoch + video_duration_sec + 60)
 
     if not hr_readings:
         for e in events:
