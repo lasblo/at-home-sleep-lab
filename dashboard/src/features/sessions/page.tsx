@@ -1,7 +1,6 @@
 import { useNavigate } from "react-router-dom"
 import { useSessions } from "./hooks/use-sessions"
 import { PageHeader } from "@/shared/components/page-header"
-import { PlmiBadge } from "@/shared/components/plmi-badge"
 import {
   Table,
   TableBody,
@@ -129,7 +128,7 @@ export default function SessionsPage() {
                 <TableCell>
                   {s.hr_enabled ? (
                     <Badge variant="secondary" className="text-[10px]">
-                      WHOOP
+                      HR
                     </Badge>
                   ) : (
                     <span className="text-muted-foreground">-</span>

@@ -5,7 +5,10 @@
     },
     "permissions": {
         "allow": [
-            "mcp__Claude_Preview__preview_start"
+            "mcp__Claude_Preview__preview_start",
+            "mcp__plugin_playwright_playwright__browser_navigate",
+            "mcp__plugin_playwright_playwright__browser_take_screenshot",
+            "mcp__plugin_playwright_playwright__browser_wait_for"
         ]
     },
     "hooks": {
@@ -15,7 +18,7 @@
                 "hooks": [
                     {
                         "type": "command",
-                        "command": "jq -r '.tool_response.filePath // .tool_input.file_path' | { read -r f; case \"$f\" in */dashboard/*) cd /Users/lasse/workspace/sleep_analysis/dashboard && npx prettier --write --ignore-unknown \"$f\" ;; */backend/*|*/ble_service.py) ruff format --config /Users/lasse/workspace/sleep_analysis/ruff.toml \"$f\" ;; esac; } 2>/dev/null || true"
+                        "command": "jq -r '.tool_response.filePath // .tool_input.file_path' | { read -r f; ROOT=$(git rev-parse --show-toplevel); case \"$f\" in */dashboard/*) cd \"$ROOT/dashboard\" && npx prettier --write --ignore-unknown \"$f\" ;; */backend/*|*/ble_service.py) ruff format --config \"$ROOT/ruff.toml\" \"$f\" ;; esac; } 2>/dev/null || true"
                     }
                 ]
             }

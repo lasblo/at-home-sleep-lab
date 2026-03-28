@@ -369,7 +369,7 @@ def generate_hr_readings(
 
         hr = max(40, min(120, round(hr)))
         ts = datetime.fromtimestamp(epoch, tz=timezone.utc)
-        readings.append((ts, epoch, hr, "WHOOP 4.0"))
+        readings.append((ts, epoch, hr, "BLE HR Monitor"))
 
     return readings
 
