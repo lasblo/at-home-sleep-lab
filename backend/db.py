@@ -531,9 +531,46 @@ async def get_session_detail(session_id: str) -> dict | None:
 
     hours = session.get("total_hours") or sum(v["duration_sec"] for v in videos) / 3600
 
+    # Hourly distribution for this session
+    hourly_rows = await pool.fetch(
+        """
+        SELECT
+            floor(
+                (extract(epoch from v.start_local - s.started_at) + e.timestamp_sec) / 3600
+            )::int as hour_offset,
+            COUNT(e.*) FILTER (WHERE e.is_plm) as plm_count,
+            COUNT(e.*) FILTER (WHERE e.movement_type = 'body') as body_count,
+            COUNT(e.*) as total_count
+        FROM events e
+        JOIN videos v ON e.video_id = v.id AND v.processed = true
+        JOIN sessions s ON v.session_id = s.id
+        WHERE v.session_id = $1
+        GROUP BY hour_offset
+        ORDER BY hour_offset
+        """,
+        session_id,
+    )
+    hourly_distribution = []
+    for hr in hourly_rows:
+        h = hr["hour_offset"]
+        plm = hr["plm_count"]
+        body = hr["body_count"]
+        total = hr["total_count"]
+        hourly_distribution.append(
+            {
+                "hour_offset": h,
+                "label": f"Hour {h + 1}",
+                "plm_count": plm,
+                "body_count": body,
+                "other_count": total - plm - body,
+                "total_count": total,
+            }
+        )
+
     session["videos"] = videos
     session["events"] = events
     session["summary"] = _compute_summary(events, hours)
+    session["hourly_distribution"] = hourly_distribution
     return session
 
 
