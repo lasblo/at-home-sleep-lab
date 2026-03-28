@@ -1,4 +1,4 @@
-.PHONY: up dev down nuke ble logs
+.PHONY: up dev down nuke ble logs seed
 
 up:
 	docker compose up -d
@@ -20,3 +20,6 @@ ble:
 
 logs:
 	docker compose logs -f
+
+seed:
+	docker compose -f compose.dev.yml exec backend python seed.py
