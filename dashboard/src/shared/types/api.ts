@@ -155,3 +155,30 @@ export interface ProcessingStatus {
   progress: Record<string, number>
   error: string | null
 }
+
+export interface Session {
+  id: string
+  status: "recording" | "processing" | "analyzed" | "failed"
+  started_at: string
+  stopped_at: string | null
+  night_date: string
+  total_hours: number | null
+  hr_enabled: boolean
+  unifi_camera_id: string | null
+  notes: string | null
+}
+
+export interface SessionDetail extends Session {
+  videos: VideoInfo[]
+  events: SleepEvent[]
+  summary: NightSummary
+  hourly_distribution?: HourlyBucket[]
+  arousal_summary?: ArousalSummary
+}
+
+export interface UniFiCamera {
+  id: string
+  name: string
+  type: string
+  is_connected: boolean
+}

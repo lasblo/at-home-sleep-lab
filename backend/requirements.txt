@@ -5,3 +5,6 @@ opencv-python-headless
 numpy
 scipy
 asyncpg
+uiprotect
+httpx
+cryptography

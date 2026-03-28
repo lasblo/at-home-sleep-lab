@@ -1,4 +1,4 @@
-.PHONY: up dev down hr
+.PHONY: up dev down ble logs
 
 up:
 	docker compose up -d
@@ -9,7 +9,10 @@ dev:
 down:
 	docker compose down
 
-hr:
-	@test -d .venv || (echo "Error: .venv not found. Run: python3 -m venv .venv && .venv/bin/pip install bleak" && exit 1)
-	@.venv/bin/python -c "import bleak" 2>/dev/null || (echo "Error: bleak not installed. Run: .venv/bin/pip install bleak" && exit 1)
-	.venv/bin/python backend/whoop_hr.py
+ble:
+	@test -d .venv || (echo "Error: .venv not found. Run: python3 -m venv .venv && .venv/bin/pip install bleak fastapi uvicorn" && exit 1)
+	@.venv/bin/python -c "import bleak, fastapi, uvicorn" 2>/dev/null || (echo "Error: missing deps. Run: .venv/bin/pip install bleak fastapi uvicorn" && exit 1)
+	.venv/bin/python ble_service.py
+
+logs:
+	docker compose logs -f

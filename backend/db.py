@@ -13,6 +13,25 @@ import asyncpg
 _pool: asyncpg.Pool | None = None
 
 SCHEMA = """
+CREATE TABLE IF NOT EXISTS settings (
+    key TEXT PRIMARY KEY,
+    value JSONB NOT NULL,
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS sessions (
+    id TEXT PRIMARY KEY,
+    status TEXT NOT NULL DEFAULT 'recording',
+    started_at TIMESTAMPTZ NOT NULL,
+    stopped_at TIMESTAMPTZ,
+    night_date DATE NOT NULL,
+    total_hours DOUBLE PRECISION,
+    hr_enabled BOOLEAN DEFAULT FALSE,
+    unifi_camera_id TEXT,
+    notes TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
 CREATE TABLE IF NOT EXISTS videos (
     id TEXT PRIMARY KEY,
     filename TEXT NOT NULL UNIQUE,
@@ -26,6 +45,7 @@ CREATE TABLE IF NOT EXISTS videos (
     width INTEGER,
     height INTEGER,
     processed BOOLEAN DEFAULT FALSE,
+    session_id TEXT REFERENCES sessions(id),
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
@@ -416,3 +436,155 @@ async def get_hr_count() -> int:
     """Get total number of HR readings."""
     pool = await get_pool()
     return await pool.fetchval("SELECT COUNT(*) FROM hr_readings")
+
+
+# ── Settings ────────────────────────────────────────────────────────
+
+async def get_setting(key: str) -> dict | None:
+    pool = await get_pool()
+    row = await pool.fetchval("SELECT value FROM settings WHERE key = $1", key)
+    return json.loads(row) if row else None
+
+
+async def set_setting(key: str, value: dict):
+    pool = await get_pool()
+    await pool.execute("""
+        INSERT INTO settings (key, value, updated_at)
+        VALUES ($1, $2, NOW())
+        ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()
+    """, key, json.dumps(value))
+
+
+async def get_all_settings() -> dict[str, dict]:
+    pool = await get_pool()
+    rows = await pool.fetch("SELECT key, value FROM settings")
+    return {r["key"]: json.loads(r["value"]) for r in rows}
+
+
+# ── Sessions ────────────────────────────────────────────────────────
+
+async def create_session(session_id: str, night_date: str, started_at: str,
+                         hr_enabled: bool, camera_id: str | None) -> dict:
+    pool = await get_pool()
+    await pool.execute("""
+        INSERT INTO sessions (id, status, started_at, night_date, hr_enabled, unifi_camera_id)
+        VALUES ($1, 'recording', $2, $3, $4, $5)
+    """, session_id, started_at, night_date, hr_enabled, camera_id)
+    return await get_session(session_id)
+
+
+async def get_session(session_id: str) -> dict | None:
+    pool = await get_pool()
+    row = await pool.fetchrow("SELECT * FROM sessions WHERE id = $1", session_id)
+    if not row:
+        return None
+    return _session_to_dict(row)
+
+
+async def get_active_session() -> dict | None:
+    pool = await get_pool()
+    row = await pool.fetchrow(
+        "SELECT * FROM sessions WHERE status = 'recording' ORDER BY started_at DESC LIMIT 1"
+    )
+    return _session_to_dict(row) if row else None
+
+
+async def list_sessions() -> list[dict]:
+    pool = await get_pool()
+    rows = await pool.fetch("SELECT * FROM sessions ORDER BY started_at DESC")
+    return [_session_to_dict(r) for r in rows]
+
+
+async def update_session(session_id: str, **kwargs):
+    pool = await get_pool()
+    sets = []
+    vals = [session_id]
+    i = 2
+    for k, v in kwargs.items():
+        sets.append(f"{k} = ${i}")
+        vals.append(v)
+        i += 1
+    if not sets:
+        return
+    sql = f"UPDATE sessions SET {', '.join(sets)} WHERE id = $1"
+    await pool.execute(sql, *vals)
+
+
+async def get_session_videos(session_id: str) -> list[dict]:
+    pool = await get_pool()
+    rows = await pool.fetch("""
+        SELECT id, filename, start_utc, end_utc, start_local, end_local,
+               duration_sec, processed, session_id
+        FROM videos WHERE session_id = $1 ORDER BY start_local
+    """, session_id)
+    return [
+        {
+            "id": r["id"],
+            "filename": r["filename"],
+            "start": r["start_utc"].isoformat(),
+            "end": r["end_utc"].isoformat(),
+            "start_local": r["start_local"].isoformat(),
+            "end_local": r["end_local"].isoformat(),
+            "duration_sec": r["duration_sec"],
+            "processed": r["processed"],
+        }
+        for r in rows
+    ]
+
+
+async def get_session_detail(session_id: str) -> dict | None:
+    """Get session with associated videos and summary stats."""
+    session = await get_session(session_id)
+    if not session:
+        return None
+
+    videos = await get_session_videos(session_id)
+    video_ids = [v["id"] for v in videos]
+
+    processed_ids = [v["id"] for v in videos if v["processed"]]
+    events = await get_events_for_videos(processed_ids) if processed_ids else []
+
+    # Compute summary from events
+    plm_count = sum(1 for e in events if e.get("is_plm"))
+    total = len(events)
+    body = sum(1 for e in events if e.get("movement_type") == "body")
+    hours = session.get("total_hours") or sum(v["duration_sec"] for v in videos) / 3600
+
+    session["videos"] = videos
+    session["events"] = events
+    session["summary"] = {
+        "total_movements": total,
+        "plm_count": plm_count,
+        "plmi": round(plm_count / hours, 1) if hours > 0 else 0,
+        "series_count": len(set(e.get("series_id") for e in events if e.get("series_id"))),
+        "recording_hours": round(hours, 2),
+        "body_movements": body,
+    }
+    return session
+
+
+def _session_to_dict(row) -> dict:
+    return {
+        "id": row["id"],
+        "status": row["status"],
+        "started_at": row["started_at"].isoformat() if row["started_at"] else None,
+        "stopped_at": row["stopped_at"].isoformat() if row["stopped_at"] else None,
+        "night_date": row["night_date"].isoformat() if row["night_date"] else None,
+        "total_hours": row["total_hours"],
+        "hr_enabled": row["hr_enabled"],
+        "unifi_camera_id": row["unifi_camera_id"],
+        "notes": row["notes"],
+    }
+
+
+async def insert_video(video_id: str, filename: str, start_utc: str, end_utc: str,
+                       start_local: str, end_local: str, duration_sec: float,
+                       session_id: str | None = None):
+    """Insert a new video record (from UniFi fetch or legacy import)."""
+    pool = await get_pool()
+    await pool.execute("""
+        INSERT INTO videos (id, filename, start_utc, end_utc, start_local, end_local,
+                           duration_sec, session_id)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        ON CONFLICT (id) DO UPDATE SET session_id = COALESCE(EXCLUDED.session_id, videos.session_id)
+    """, video_id, filename, start_utc, end_utc, start_local, end_local, duration_sec, session_id)

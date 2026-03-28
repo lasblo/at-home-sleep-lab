@@ -7,7 +7,6 @@ import {
   BreadcrumbPage,
   BreadcrumbSeparator,
 } from "@/components/ui/breadcrumb"
-import { formatDate } from "@/shared/lib/utils"
 
 export function BreadcrumbNav() {
   const location = useLocation()
@@ -18,16 +17,13 @@ export function BreadcrumbNav() {
 
   if (location.pathname === "/") {
     crumbs.push({ label: "Dashboard" })
-  } else if (location.pathname.startsWith("/nights")) {
-    crumbs.push({ label: "Nights", href: "/nights" })
-    if (params.date) {
-      crumbs.push({ label: formatDate(params.date) })
+  } else if (location.pathname.startsWith("/sessions")) {
+    crumbs.push({ label: "Sessions", href: "/sessions" })
+    if (params.sessionId) {
+      crumbs.push({ label: "Session Detail" })
     }
   } else if (location.pathname.startsWith("/videos")) {
-    crumbs.push({ label: "Videos", href: "/videos" })
-    if (params.videoId) {
-      crumbs.push({ label: "Video Review" })
-    }
+    crumbs.push({ label: "Video Review" })
   } else if (location.pathname === "/heart-rate") {
     crumbs.push({ label: "Heart Rate" })
   } else if (location.pathname === "/settings") {

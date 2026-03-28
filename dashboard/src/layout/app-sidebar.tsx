@@ -1,13 +1,13 @@
 import { useLocation, useNavigate } from "react-router-dom"
 import {
   LayoutDashboard,
-  MoonStar,
-  Video,
+  Moon as MoonIcon,
   Heart,
   Settings,
   Sun,
   Moon,
   Monitor,
+  CalendarDays,
 } from "lucide-react"
 import {
   Sidebar,
@@ -20,10 +20,10 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
 } from "@/components/ui/sidebar"
-import { ProcessingIndicator } from "@/features/processing/components/processing-indicator"
 import { useTheme } from "@/components/theme-provider"
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 import { Separator } from "@/components/ui/separator"
+import { SessionControl } from "@/features/sessions/components/session-control"
 
 const NAV_ITEMS = [
   {
@@ -35,8 +35,7 @@ const NAV_ITEMS = [
   {
     group: "Analysis",
     items: [
-      { label: "Nights", icon: MoonStar, href: "/nights" },
-      { label: "Videos", icon: Video, href: "/videos" },
+      { label: "Sessions", icon: CalendarDays, href: "/sessions" },
       { label: "Heart Rate", icon: Heart, href: "/heart-rate" },
     ],
   },
@@ -70,7 +69,7 @@ export function AppSidebar() {
             >
               <div className="flex items-center gap-2">
                 <div className="flex size-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-                  <MoonStar className="size-4" />
+                  <MoonIcon className="size-4" />
                 </div>
                 <div className="flex flex-col gap-0.5 leading-none">
                   <span className="font-semibold">Sleep Lab</span>
@@ -83,7 +82,18 @@ export function AppSidebar() {
           </SidebarMenuItem>
         </SidebarMenu>
       </SidebarHeader>
+
       <SidebarContent>
+        {/* Session control */}
+        <SidebarGroup>
+          <SidebarGroupLabel>Sleep Session</SidebarGroupLabel>
+          <div className="px-2">
+            <SessionControl />
+          </div>
+        </SidebarGroup>
+
+        <Separator />
+
         {NAV_ITEMS.map((group) => (
           <SidebarGroup key={group.group}>
             <SidebarGroupLabel>{group.group}</SidebarGroupLabel>
@@ -104,15 +114,14 @@ export function AppSidebar() {
           </SidebarGroup>
         ))}
       </SidebarContent>
+
       <SidebarFooter>
-        <ProcessingIndicator />
-        <Separator />
         <div className="flex items-center justify-center p-2">
           <ToggleGroup
             type="single"
             value={theme}
-            onValueChange={(value) => {
-              if (value) setTheme(value as "light" | "dark" | "system")
+            onValueChange={(v) => {
+              if (v) setTheme(v as "light" | "dark" | "system")
             }}
             size="sm"
           >
