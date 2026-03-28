@@ -3,7 +3,7 @@ import { useSessionDetail } from "./hooks/use-sessions"
 import { PageHeader } from "@/shared/components/page-header"
 import { PlmiBadge } from "@/shared/components/plmi-badge"
 import { NotFound, ErrorState } from "@/shared/components/error-state"
-import { HourlyChart } from "@/features/nights/components/hourly-chart"
+import { HourlyChart } from "@/shared/components/hourly-chart"
 import {
   Card,
   CardContent,

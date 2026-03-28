@@ -2,7 +2,6 @@ import { useState, useCallback } from "react"
 import { useParams } from "react-router-dom"
 import { useVideoResults } from "./hooks/use-video-results"
 import { useHeartRate } from "./hooks/use-heart-rate"
-import { useProcessing } from "@/features/processing/hooks/use-processing"
 import { PageHeader } from "@/shared/components/page-header"
 import { NotFound, ErrorState } from "@/shared/components/error-state"
 import { VideoPlayer } from "./components/video-player"
@@ -11,20 +10,11 @@ import { EventTable } from "./components/event-table"
 import { VideoSummary } from "./components/video-summary"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Skeleton } from "@/components/ui/skeleton"
-import {
-  Empty,
-  EmptyHeader,
-  EmptyMedia,
-  EmptyTitle,
-  EmptyDescription,
-} from "@/components/ui/empty"
-import { Video } from "lucide-react"
 import { formatClockTime } from "@/shared/lib/utils"
 
 export default function VideoReviewPage() {
   const { videoId } = useParams<{ videoId: string }>()
   const { data: results, isLoading, isError, error, refetch } = useVideoResults(videoId)
-  const { reanalyze, status } = useProcessing()
 
   const { data: hrResponse } = useHeartRate(
     results?.video?.start_local,
@@ -75,12 +65,7 @@ export default function VideoReviewPage() {
     <div className="flex flex-col gap-4 p-6">
       <PageHeader title={title} description={subtitle} />
 
-      <VideoSummary
-        results={results}
-        videoId={videoId!}
-        onReanalyze={(id) => reanalyze.mutate(id)}
-        processing={status ?? undefined}
-      />
+      <VideoSummary results={results} />
 
       <VideoPlayer
         filename={results.video.filename}

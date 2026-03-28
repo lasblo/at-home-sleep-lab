@@ -4,7 +4,6 @@ import { useQuery } from "@tanstack/react-query"
 import { useSessions } from "@/features/sessions/hooks/use-sessions"
 import { PageHeader } from "@/shared/components/page-header"
 import { StatCard } from "@/shared/components/stat-card"
-import { MetricChart } from "@/features/dashboard/components/metric-chart"
 import {
   Card,
   CardContent,

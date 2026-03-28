@@ -24,19 +24,6 @@ export interface ArousalSummary {
   plm_with_arousal: number
 }
 
-export interface Night {
-  night_date: string
-  start_local: string
-  end_local: string
-  total_hours: number
-  video_ids: string[]
-  videos_total: number
-  videos_processed: number
-  summary: NightSummary | null
-  hourly_distribution: HourlyBucket[] | null
-  arousal_summary: ArousalSummary | null
-}
-
 export interface VideoInfo {
   id: string
   filename: string
@@ -127,19 +114,6 @@ export interface VideoResults {
   arousal_summary?: ArousalSummary
 }
 
-export interface NightDetail {
-  night_date: string
-  start_local: string
-  end_local: string
-  total_hours: number
-  videos: VideoInfo[]
-  summary: NightSummary
-  hourly_distribution: HourlyBucket[]
-  events: SleepEvent[]
-  series: SeriesInfo[]
-  arousal_summary?: ArousalSummary
-}
-
 export interface HRReading {
   epoch: number
   hr: number
@@ -148,12 +122,6 @@ export interface HRReading {
 export interface HRResponse {
   readings: HRReading[]
   count: number
-}
-
-export interface ProcessingStatus {
-  running: boolean
-  progress: Record<string, number>
-  error: string | null
 }
 
 export interface Session {

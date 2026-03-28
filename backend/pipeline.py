@@ -130,14 +130,9 @@ def _smooth(signal: np.ndarray, window: int) -> np.ndarray:
 
 
 def _rolling_percentile(signal: np.ndarray, window: int, pct: int = 50) -> np.ndarray:
-    """Compute rolling percentile for adaptive baseline."""
-    result = np.empty_like(signal)
-    half = window // 2
-    for i in range(len(signal)):
-        start = max(0, i - half)
-        end = min(len(signal), i + half)
-        result[i] = np.percentile(signal[start:end], pct)
-    return result
+    """Compute rolling percentile for adaptive baseline using scipy."""
+    from scipy.ndimage import percentile_filter
+    return percentile_filter(signal, percentile=pct, size=window, mode="nearest")
 
 
 def detect_events(motion_signal: dict) -> list[dict]:

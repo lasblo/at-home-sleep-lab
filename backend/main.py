@@ -6,14 +6,14 @@ from contextlib import asynccontextmanager
 from datetime import datetime
 from pathlib import Path
 
+import httpx
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import Response
+from fastapi.responses import FileResponse, Response
 
 import db
 import session_manager
 import unifi
-from nights import group_videos_into_nights, compute_night_summary
 from arousal import compute_video_arousal
 
 VIDEOS_DIR = Path(os.environ.get("VIDEOS_DIR", str(Path(__file__).resolve().parent.parent / "videos")))
@@ -23,12 +23,10 @@ HR_INPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 HR_STATUS_FILE = HR_INPUT_DIR / "hr_status.json"
 
-# HR ingestion background task
 _hr_ingest_task: asyncio.Task | None = None
 
 
 async def _hr_ingest_loop():
-    """Background task: periodically import HR readings from JSONL into DB."""
     while True:
         try:
             await db.ingest_hr_readings(HR_INPUT_DIR)
@@ -64,19 +62,17 @@ app.add_middleware(
 @app.post("/api/sessions/start")
 async def start_session():
     try:
-        session = await session_manager.start_session()
-        return session
-    except Exception as e:
-        return {"error": str(e)}
+        return await session_manager.start_session()
+    except RuntimeError as e:
+        raise HTTPException(400, str(e))
 
 
 @app.post("/api/sessions/stop")
 async def stop_session():
     try:
-        session = await session_manager.stop_session()
-        return session
-    except Exception as e:
-        return {"error": str(e)}
+        return await session_manager.stop_session()
+    except RuntimeError as e:
+        raise HTTPException(400, str(e))
 
 
 @app.get("/api/sessions/active")
@@ -105,7 +101,6 @@ async def get_setting(key: str):
     value = await db.get_setting(key)
     if value is None:
         return {}
-    # Don't expose password in GET
     if key == "unifi" and "password" in value:
         value = {**value, "password": "••••••••" if value["password"] else ""}
     return value
@@ -114,7 +109,6 @@ async def get_setting(key: str):
 @app.put("/api/settings/{key}")
 async def set_setting(key: str, request: Request):
     body = await request.json()
-    # For unifi settings, preserve existing password if masked
     if key == "unifi" and body.get("password", "").startswith("••"):
         existing = await db.get_setting("unifi")
         if existing:
@@ -173,16 +167,7 @@ async def serve_video(filename: str, request: Request):
             },
         )
 
-    with open(path, "rb") as f:
-        data = f.read(2 * 1024 * 1024)
-    return Response(
-        content=data, status_code=200,
-        headers={
-            "Accept-Ranges": "bytes",
-            "Content-Length": str(file_size),
-            "Content-Type": "video/mp4",
-        },
-    )
+    return FileResponse(path, media_type="video/mp4")
 
 
 # ── Results (video analysis) ───────────────────────────────────────
@@ -198,7 +183,6 @@ async def video_results(video_id: str):
     if not data:
         raise HTTPException(404, "Results not found for this video")
 
-    # On-demand arousal annotation from DB HR readings
     video = data.get("video", {})
     start_local = video.get("start_local", "")
     duration = video.get("duration_sec", 3600)
@@ -252,58 +236,37 @@ async def _ble_url() -> str:
     return (ble_settings or {}).get("url", "http://host.docker.internal:8001")
 
 
-@app.get("/api/ble/discover")
-async def ble_discover():
-    """Discover WHOOP devices via host BLE service."""
-    import httpx
+async def _ble_proxy(method: str, endpoint: str, json_body=None, timeout: float = 20, error_extra: dict | None = None):
     url = await _ble_url()
     try:
-        async with httpx.AsyncClient(timeout=20) as client:
-            resp = await client.get(f"{url}/discover")
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            resp = await client.request(method, f"{url}{endpoint}", json=json_body)
             return resp.json()
     except Exception as e:
-        return {"ok": False, "error": f"BLE service unreachable: {e}", "devices": []}
+        result = {"ok": False, "error": f"BLE service unreachable: {e}"}
+        if error_extra:
+            result.update(error_extra)
+        return result
+
+
+@app.get("/api/ble/discover")
+async def ble_discover():
+    return await _ble_proxy("GET", "/discover", error_extra={"devices": []})
 
 
 @app.post("/api/ble/test")
 async def ble_test(request: Request):
-    """Test HR reading from a specific device via host BLE service."""
-    import httpx
-    url = await _ble_url()
-    body = await request.json()
-    try:
-        async with httpx.AsyncClient(timeout=20) as client:
-            resp = await client.post(f"{url}/test", json=body)
-            return resp.json()
-    except Exception as e:
-        return {"ok": False, "error": f"BLE service unreachable: {e}"}
+    return await _ble_proxy("POST", "/test", json_body=await request.json())
 
 
 @app.post("/api/ble/start")
 async def ble_start(request: Request):
-    """Start HR streaming via host BLE service."""
-    import httpx
-    url = await _ble_url()
-    body = await request.json()
-    try:
-        async with httpx.AsyncClient(timeout=20) as client:
-            resp = await client.post(f"{url}/start", json=body)
-            return resp.json()
-    except Exception as e:
-        return {"status": "error", "error": f"BLE service unreachable: {e}"}
+    return await _ble_proxy("POST", "/start", json_body=await request.json())
 
 
 @app.post("/api/ble/stop")
 async def ble_stop():
-    """Stop HR streaming via host BLE service."""
-    import httpx
-    url = await _ble_url()
-    try:
-        async with httpx.AsyncClient(timeout=10) as client:
-            resp = await client.post(f"{url}/stop")
-            return resp.json()
-    except Exception as e:
-        return {"status": "error", "error": f"BLE service unreachable: {e}"}
+    return await _ble_proxy("POST", "/stop", timeout=10)
 
 
 if __name__ == "__main__":

@@ -4,9 +4,6 @@ import {
   Moon as MoonIcon,
   Heart,
   Settings,
-  Sun,
-  Moon,
-  Monitor,
   CalendarDays,
 } from "lucide-react"
 import {
@@ -20,10 +17,9 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
 } from "@/components/ui/sidebar"
-import { useTheme } from "@/components/theme-provider"
-import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 import { Separator } from "@/components/ui/separator"
 import { SessionControl } from "@/features/sessions/components/session-control"
+import { ThemeToggle } from "@/shared/components/theme-toggle"
 
 const NAV_ITEMS = [
   {
@@ -55,7 +51,6 @@ function isActive(pathname: string, href: string): boolean {
 export function AppSidebar() {
   const location = useLocation()
   const navigate = useNavigate()
-  const { theme, setTheme } = useTheme()
 
   return (
     <Sidebar>
@@ -84,7 +79,6 @@ export function AppSidebar() {
       </SidebarHeader>
 
       <SidebarContent>
-        {/* Session control */}
         <SidebarGroup>
           <SidebarGroupLabel>Sleep Session</SidebarGroupLabel>
           <div className="px-2">
@@ -117,24 +111,7 @@ export function AppSidebar() {
 
       <SidebarFooter>
         <div className="flex items-center justify-center p-2">
-          <ToggleGroup
-            type="single"
-            value={theme}
-            onValueChange={(v) => {
-              if (v) setTheme(v as "light" | "dark" | "system")
-            }}
-            size="sm"
-          >
-            <ToggleGroupItem value="light" aria-label="Light theme">
-              <Sun />
-            </ToggleGroupItem>
-            <ToggleGroupItem value="dark" aria-label="Dark theme">
-              <Moon />
-            </ToggleGroupItem>
-            <ToggleGroupItem value="system" aria-label="System theme">
-              <Monitor />
-            </ToggleGroupItem>
-          </ToggleGroup>
+          <ThemeToggle />
         </div>
       </SidebarFooter>
     </Sidebar>
