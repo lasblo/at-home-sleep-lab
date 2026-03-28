@@ -249,6 +249,55 @@ async def hr_ingest():
     return {"ingested": count}
 
 
+# ── Labels (ground truth) ──────────────────────────────────────────
+
+
+@app.get("/api/labels/stats")
+async def label_stats():
+    return await db.get_label_stats()
+
+
+@app.get("/api/labels/export")
+async def export_labels(video_id: str | None = None):
+    return await db.export_labels(video_id)
+
+
+@app.get("/api/labels/{video_id}")
+async def get_labels(video_id: str):
+    return await db.get_labels(video_id)
+
+
+@app.post("/api/labels/{video_id}")
+async def create_label(video_id: str, request: Request):
+    body = await request.json()
+    return await db.create_label(
+        video_id=video_id,
+        timestamp_sec=body["timestamp_sec"],
+        category=body["category"],
+        duration_sec=body.get("duration_sec", 0.5),
+        notes=body.get("notes"),
+    )
+
+
+@app.put("/api/labels/item/{label_id}")
+async def update_label(label_id: int, request: Request):
+    body = await request.json()
+    allowed = {"timestamp_sec", "duration_sec", "category", "notes"}
+    updates = {k: v for k, v in body.items() if k in allowed}
+    result = await db.update_label(label_id, **updates)
+    if not result:
+        raise HTTPException(404, "Label not found")
+    return result
+
+
+@app.delete("/api/labels/item/{label_id}")
+async def delete_label(label_id: int):
+    deleted = await db.delete_label(label_id)
+    if not deleted:
+        raise HTTPException(404, "Label not found")
+    return {"ok": True}
+
+
 # ── BLE Proxy (forwards to host BLE service) ───────────────────────
 
 

@@ -5,6 +5,7 @@ import {
   Heart,
   Settings,
   CalendarDays,
+  Tags,
 } from "lucide-react"
 import {
   Sidebar,
@@ -31,6 +32,7 @@ const NAV_ITEMS = [
     items: [
       { label: "Sessions", icon: CalendarDays, href: "/sessions" },
       { label: "Heart Rate", icon: Heart, href: "/heart-rate" },
+      { label: "Labeler", icon: Tags, href: "/labeler" },
     ],
   },
   {

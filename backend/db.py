@@ -96,6 +96,17 @@ CREATE INDEX IF NOT EXISTS idx_events_plm ON events(video_id) WHERE is_plm;
 CREATE INDEX IF NOT EXISTS idx_series_video ON plm_series(video_id);
 CREATE INDEX IF NOT EXISTS idx_hr_epoch ON hr_readings(epoch);
 CREATE INDEX IF NOT EXISTS idx_hr_ts ON hr_readings(ts);
+
+CREATE TABLE IF NOT EXISTS labels (
+    id SERIAL PRIMARY KEY,
+    video_id TEXT NOT NULL REFERENCES videos(id) ON DELETE CASCADE,
+    timestamp_sec DOUBLE PRECISION NOT NULL,
+    duration_sec DOUBLE PRECISION NOT NULL DEFAULT 0.5,
+    category TEXT NOT NULL,
+    notes TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_labels_video ON labels(video_id);
 """
 
 
@@ -978,3 +989,156 @@ def _count_wake_bouts(events: list[dict], onset_sec: float, total_sec: float) ->
         if post_onset[i]["night_sec"] - post_onset[i - 1]["night_sec"] > 300:
             bouts += 1
     return bouts
+
+
+# ── Labels (ground truth) ─────────────────────────────────────────
+
+
+async def get_labels(video_id: str) -> list[dict]:
+    pool = await get_pool()
+    rows = await pool.fetch(
+        """
+        SELECT id, video_id, timestamp_sec, duration_sec, category, notes, created_at
+        FROM labels WHERE video_id = $1 ORDER BY timestamp_sec
+    """,
+        video_id,
+    )
+    return [
+        {
+            "id": r["id"],
+            "video_id": r["video_id"],
+            "timestamp_sec": r["timestamp_sec"],
+            "duration_sec": r["duration_sec"],
+            "category": r["category"],
+            "notes": r["notes"],
+            "created_at": r["created_at"].isoformat(),
+        }
+        for r in rows
+    ]
+
+
+async def create_label(
+    video_id: str,
+    timestamp_sec: float,
+    category: str,
+    duration_sec: float = 0.5,
+    notes: str | None = None,
+) -> dict:
+    pool = await get_pool()
+    row = await pool.fetchrow(
+        """
+        INSERT INTO labels (video_id, timestamp_sec, duration_sec, category, notes)
+        VALUES ($1, $2, $3, $4, $5)
+        RETURNING id, video_id, timestamp_sec, duration_sec, category, notes, created_at
+    """,
+        video_id,
+        timestamp_sec,
+        duration_sec,
+        category,
+        notes,
+    )
+    return {
+        "id": row["id"],
+        "video_id": row["video_id"],
+        "timestamp_sec": row["timestamp_sec"],
+        "duration_sec": row["duration_sec"],
+        "category": row["category"],
+        "notes": row["notes"],
+        "created_at": row["created_at"].isoformat(),
+    }
+
+
+async def update_label(label_id: int, **kwargs) -> dict | None:
+    pool = await get_pool()
+    sets = []
+    vals = [label_id]
+    i = 2
+    for k, v in kwargs.items():
+        sets.append(f"{k} = ${i}")
+        vals.append(v)
+        i += 1
+    if not sets:
+        return None
+    row = await pool.fetchrow(
+        f"""
+        UPDATE labels SET {", ".join(sets)} WHERE id = $1
+        RETURNING id, video_id, timestamp_sec, duration_sec, category, notes, created_at
+    """,
+        *vals,
+    )
+    if not row:
+        return None
+    return {
+        "id": row["id"],
+        "video_id": row["video_id"],
+        "timestamp_sec": row["timestamp_sec"],
+        "duration_sec": row["duration_sec"],
+        "category": row["category"],
+        "notes": row["notes"],
+        "created_at": row["created_at"].isoformat(),
+    }
+
+
+async def delete_label(label_id: int) -> bool:
+    pool = await get_pool()
+    result = await pool.execute("DELETE FROM labels WHERE id = $1", label_id)
+    return result == "DELETE 1"
+
+
+async def get_label_stats() -> list[dict]:
+    """Summary of labeled videos and label counts."""
+    pool = await get_pool()
+    rows = await pool.fetch("""
+        SELECT v.id as video_id, v.filename, v.start_local, v.duration_sec,
+               COUNT(l.id) as label_count,
+               COUNT(DISTINCT l.category) as category_count
+        FROM videos v
+        LEFT JOIN labels l ON l.video_id = v.id
+        GROUP BY v.id
+        HAVING COUNT(l.id) > 0
+        ORDER BY v.start_local
+    """)
+    return [
+        {
+            "video_id": r["video_id"],
+            "filename": r["filename"],
+            "start_local": r["start_local"].isoformat(),
+            "duration_sec": r["duration_sec"],
+            "label_count": r["label_count"],
+            "category_count": r["category_count"],
+        }
+        for r in rows
+    ]
+
+
+async def export_labels(video_id: str | None = None) -> list[dict]:
+    """Export labels joined with video metadata for ground truth."""
+    pool = await get_pool()
+    if video_id:
+        rows = await pool.fetch(
+            """
+            SELECT l.*, v.filename, v.start_local, v.start_utc
+            FROM labels l JOIN videos v ON l.video_id = v.id
+            WHERE l.video_id = $1 ORDER BY l.timestamp_sec
+        """,
+            video_id,
+        )
+    else:
+        rows = await pool.fetch("""
+            SELECT l.*, v.filename, v.start_local, v.start_utc
+            FROM labels l JOIN videos v ON l.video_id = v.id
+            ORDER BY v.start_local, l.timestamp_sec
+        """)
+    return [
+        {
+            "video_id": r["video_id"],
+            "filename": r["filename"],
+            "video_start_utc": r["start_utc"].isoformat(),
+            "video_start_local": r["start_local"].isoformat(),
+            "timestamp_sec": r["timestamp_sec"],
+            "duration_sec": r["duration_sec"],
+            "category": r["category"],
+            "notes": r["notes"],
+        }
+        for r in rows
+    ]
