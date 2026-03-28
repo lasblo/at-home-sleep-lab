@@ -636,11 +636,20 @@ async def hr_start():
 
     # Wait briefly to see if it crashes immediately (e.g. no Bluetooth)
     import time
-    time.sleep(1.5)
+    time.sleep(2)
     if _hr_process.poll() is not None:
         stderr = _hr_process.stderr.read().decode() if _hr_process.stderr else ""
         _hr_process = None
-        return {"status": "failed", "error": stderr.strip() or "Process exited immediately. Bluetooth may not be available."}
+        # Extract just the last exception line, not the full traceback
+        lines = [l for l in stderr.strip().splitlines() if l.strip()]
+        last_error = lines[-1] if lines else ""
+        if "FileNotFoundError" in stderr or "dbus" in stderr.lower():
+            msg = "Bluetooth not available. WHOOP monitoring requires running outside Docker on a host with Bluetooth."
+        elif last_error:
+            msg = last_error
+        else:
+            msg = "HR monitor process exited immediately."
+        return {"status": "failed", "error": msg}
 
     return {"status": "started", "pid": _hr_process.pid}
 
