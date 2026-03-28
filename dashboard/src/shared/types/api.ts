@@ -191,6 +191,25 @@ export interface DashboardSummary {
   aggregate_hourly: AggregateHourly[]
 }
 
+export interface Label {
+  id: number
+  video_id: string
+  timestamp_sec: number
+  duration_sec: number
+  category: string
+  notes: string | null
+  created_at: string
+}
+
+export interface LabelStats {
+  video_id: string
+  filename: string
+  start_local: string
+  duration_sec: number
+  label_count: number
+  category_count: number
+}
+
 export interface UniFiCamera {
   id: string
   name: string

@@ -9,6 +9,7 @@ const SessionDetailPage = lazy(() => import("@/features/sessions/detail-page"))
 const VideoReviewPage = lazy(() => import("@/features/video-review/page"))
 const HeartRatePage = lazy(() => import("@/features/heart-rate/page"))
 const SettingsPage = lazy(() => import("@/features/settings/page"))
+const LabelerPage = lazy(() => import("@/features/labeler/page"))
 
 function Lazy({ children }: { children: React.ReactNode }) {
   return (
@@ -59,6 +60,14 @@ export const router = createBrowserRouter([
         element: (
           <Lazy>
             <VideoReviewPage />
+          </Lazy>
+        ),
+      },
+      {
+        path: "labeler",
+        element: (
+          <Lazy>
+            <LabelerPage />
           </Lazy>
         ),
       },
