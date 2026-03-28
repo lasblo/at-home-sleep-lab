@@ -120,7 +120,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
               <div className="flex flex-col gap-0.5 leading-none">
                 <span className="font-medium">Sleep Lab</span>
                 <span className="text-xs text-muted-foreground">
-                  At-home analysis
+                  But at Home
                 </span>
               </div>
             </SidebarMenuButton>
