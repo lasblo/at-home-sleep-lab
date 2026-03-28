@@ -100,7 +100,9 @@ CREATE INDEX IF NOT EXISTS idx_hr_ts ON hr_readings(ts);
 
 async def init_db():
     global _pool
-    dsn = os.environ.get("DATABASE_URL", "postgresql://sleeplab:sleeplab@localhost:5432/sleeplab")
+    dsn = os.environ.get(
+        "DATABASE_URL", "postgresql://sleeplab:sleeplab@localhost:5432/sleeplab"
+    )
     _pool = await asyncpg.create_pool(dsn, min_size=2, max_size=10)
     async with _pool.acquire() as conn:
         await conn.execute(SCHEMA)
@@ -120,6 +122,7 @@ async def close_db():
 
 
 # ── Row helpers ────────────────────────────────────────────────────
+
 
 def _video_row_to_dict(r, include_utc: bool = True) -> dict:
     d = {
@@ -164,13 +167,16 @@ def _compute_summary(events: list[dict], recording_hours: float) -> dict:
         "total_movements": len(events),
         "plm_count": plm_count,
         "plmi": round(plm_count / recording_hours, 1) if recording_hours > 0 else 0,
-        "series_count": len(set(e.get("series_id") for e in events if e.get("series_id"))),
+        "series_count": len(
+            set(e.get("series_id") for e in events if e.get("series_id"))
+        ),
         "recording_hours": round(recording_hours, 2),
         "body_movements": sum(1 for e in events if e.get("movement_type") == "body"),
     }
 
 
 # ── Videos ──────────────────────────────────────────────────────────
+
 
 async def list_videos() -> list[dict]:
     pool = await get_pool()
@@ -182,56 +188,94 @@ async def list_videos() -> list[dict]:
     return [_video_row_to_dict(r) for r in rows]
 
 
-async def save_video_results(video_meta: dict, video_info: dict, motion_signal: dict,
-                              events: list[dict], series: list[dict], summary: dict):
+async def save_video_results(
+    video_meta: dict,
+    video_info: dict,
+    motion_signal: dict,
+    events: list[dict],
+    series: list[dict],
+    summary: dict,
+):
     pool = await get_pool()
     vid = video_meta["id"]
     async with pool.acquire() as conn:
         async with conn.transaction():
-            await conn.execute("""
+            await conn.execute(
+                """
                 UPDATE videos SET
                     fps = $2, frame_count = $3, width = $4, height = $5, processed = TRUE
                 WHERE id = $1
-            """, vid, video_info.get("fps"), video_info.get("frame_count"),
-                video_info.get("width"), video_info.get("height"))
+            """,
+                vid,
+                video_info.get("fps"),
+                video_info.get("frame_count"),
+                video_info.get("width"),
+                video_info.get("height"),
+            )
 
-            await conn.execute("""
+            await conn.execute(
+                """
                 INSERT INTO motion_signals (video_id, sample_rate_hz, values)
                 VALUES ($1, $2, $3)
                 ON CONFLICT (video_id) DO UPDATE SET
                     sample_rate_hz = EXCLUDED.sample_rate_hz,
                     values = EXCLUDED.values
-            """, vid, motion_signal["sample_rate_hz"], motion_signal["values"])
+            """,
+                vid,
+                motion_signal["sample_rate_hz"],
+                motion_signal["values"],
+            )
 
             await conn.execute("DELETE FROM events WHERE video_id = $1", vid)
             await conn.execute("DELETE FROM plm_series WHERE video_id = $1", vid)
 
             if events:
-                await conn.executemany("""
+                await conn.executemany(
+                    """
                     INSERT INTO events (video_id, event_index, timestamp_sec, onset_sec,
                         duration_sec, amplitude, spatial_variance, peak_index,
                         movement_type, is_plm, series_id, arousal, debug)
                     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
-                """, [
-                    (vid, e.get("id", 0), e["timestamp_sec"], e["onset_sec"],
-                     e["duration_sec"], e["amplitude"], e.get("spatial_variance"),
-                     e.get("peak_index"), e.get("movement_type", "limb"),
-                     e.get("is_plm", False), e.get("series_id"),
-                     json.dumps(e.get("arousal")) if e.get("arousal") else None,
-                     json.dumps(e.get("debug")) if e.get("debug") else None)
-                    for e in events
-                ])
+                """,
+                    [
+                        (
+                            vid,
+                            e.get("id", 0),
+                            e["timestamp_sec"],
+                            e["onset_sec"],
+                            e["duration_sec"],
+                            e["amplitude"],
+                            e.get("spatial_variance"),
+                            e.get("peak_index"),
+                            e.get("movement_type", "limb"),
+                            e.get("is_plm", False),
+                            e.get("series_id"),
+                            json.dumps(e.get("arousal")) if e.get("arousal") else None,
+                            json.dumps(e.get("debug")) if e.get("debug") else None,
+                        )
+                        for e in events
+                    ],
+                )
 
             if series:
-                await conn.executemany("""
+                await conn.executemany(
+                    """
                     INSERT INTO plm_series (video_id, series_index, event_count,
                         mean_interval_sec, start_sec, end_sec)
                     VALUES ($1,$2,$3,$4,$5,$6)
-                """, [
-                    (vid, s["id"], s["event_count"],
-                     s.get("mean_interval_sec"), s["start_sec"], s["end_sec"])
-                    for s in series
-                ])
+                """,
+                    [
+                        (
+                            vid,
+                            s["id"],
+                            s["event_count"],
+                            s.get("mean_interval_sec"),
+                            s["start_sec"],
+                            s["end_sec"],
+                        )
+                        for s in series
+                    ],
+                )
 
 
 async def get_video_results(video_id: str) -> dict | None:
@@ -241,11 +285,15 @@ async def get_video_results(video_id: str) -> dict | None:
     if not video or not video["processed"]:
         return None
 
-    motion = await pool.fetchrow("SELECT * FROM motion_signals WHERE video_id = $1", video_id)
+    motion = await pool.fetchrow(
+        "SELECT * FROM motion_signals WHERE video_id = $1", video_id
+    )
     events = await pool.fetch(
-        "SELECT * FROM events WHERE video_id = $1 ORDER BY timestamp_sec", video_id)
+        "SELECT * FROM events WHERE video_id = $1 ORDER BY timestamp_sec", video_id
+    )
     series = await pool.fetch(
-        "SELECT * FROM plm_series WHERE video_id = $1 ORDER BY series_index", video_id)
+        "SELECT * FROM plm_series WHERE video_id = $1 ORDER BY series_index", video_id
+    )
 
     event_list = [_event_row_to_dict(e) for e in events]
     recording_hours = video["duration_sec"] / 3600
@@ -270,7 +318,9 @@ async def get_video_results(video_id: str) -> dict | None:
         "motion_signal": {
             "sample_rate_hz": motion["sample_rate_hz"],
             "values": list(motion["values"]),
-        } if motion else {"sample_rate_hz": 0, "values": []},
+        }
+        if motion
+        else {"sample_rate_hz": 0, "values": []},
         "events": event_list,
         "series": [
             {
@@ -288,13 +338,17 @@ async def get_video_results(video_id: str) -> dict | None:
 
 async def get_events_for_videos(video_ids: list[str]) -> list[dict]:
     pool = await get_pool()
-    rows = await pool.fetch("""
+    rows = await pool.fetch(
+        """
         SELECT * FROM events WHERE video_id = ANY($1) ORDER BY video_id, timestamp_sec
-    """, video_ids)
+    """,
+        video_ids,
+    )
     return [_event_row_to_dict(e, include_video_id=True) for e in rows]
 
 
 # ── HR Readings ─────────────────────────────────────────────────────
+
 
 async def ingest_hr_readings(hr_dir: Path) -> int:
     if not hr_dir.exists():
@@ -319,38 +373,50 @@ async def ingest_hr_readings(hr_dir: Path) -> int:
     pool = await get_pool()
     async with pool.acquire() as conn:
         for batch_start in range(0, len(readings), 1000):
-            batch = readings[batch_start:batch_start + 1000]
-            await conn.executemany("""
+            batch = readings[batch_start : batch_start + 1000]
+            await conn.executemany(
+                """
                 INSERT INTO hr_readings (ts, epoch, hr, device)
                 VALUES ($1, $2, $3, $4)
                 ON CONFLICT (epoch) DO NOTHING
-            """, batch)
+            """,
+                batch,
+            )
 
     return len(readings)
 
 
 async def get_hr_range(start_epoch: float, end_epoch: float) -> list[dict]:
     pool = await get_pool()
-    rows = await pool.fetch("""
+    rows = await pool.fetch(
+        """
         SELECT epoch, hr FROM hr_readings
         WHERE epoch >= $1 AND epoch <= $2
         ORDER BY epoch
-    """, start_epoch, end_epoch)
+    """,
+        start_epoch,
+        end_epoch,
+    )
     return [{"epoch": r["epoch"], "hr": r["hr"]} for r in rows]
 
 
 async def get_hr_latest(since_epoch: float = 0, limit: int = 500) -> list[dict]:
     pool = await get_pool()
-    rows = await pool.fetch("""
+    rows = await pool.fetch(
+        """
         SELECT epoch, hr FROM hr_readings
         WHERE epoch >= $1
         ORDER BY epoch DESC
         LIMIT $2
-    """, since_epoch, limit)
+    """,
+        since_epoch,
+        limit,
+    )
     return [{"epoch": r["epoch"], "hr": r["hr"]} for r in rows]
 
 
 # ── Settings ────────────────────────────────────────────────────────
+
 
 async def get_setting(key: str) -> dict | None:
     pool = await get_pool()
@@ -360,24 +426,43 @@ async def get_setting(key: str) -> dict | None:
 
 async def set_setting(key: str, value: dict):
     pool = await get_pool()
-    await pool.execute("""
+    await pool.execute(
+        """
         INSERT INTO settings (key, value, updated_at)
         VALUES ($1, $2, NOW())
         ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()
-    """, key, json.dumps(value))
+    """,
+        key,
+        json.dumps(value),
+    )
 
 
 # ── Sessions ────────────────────────────────────────────────────────
 
-async def create_session(session_id: str, night_date: str, started_at: str,
-                         hr_enabled: bool, camera_id: str | None) -> dict:
+
+async def create_session(
+    session_id: str,
+    night_date: str,
+    started_at: str,
+    hr_enabled: bool,
+    camera_id: str | None,
+) -> dict:
     pool = await get_pool()
     started_dt = datetime.fromisoformat(started_at)
-    night_dt = date.fromisoformat(night_date) if isinstance(night_date, str) else night_date
-    await pool.execute("""
+    night_dt = (
+        date.fromisoformat(night_date) if isinstance(night_date, str) else night_date
+    )
+    await pool.execute(
+        """
         INSERT INTO sessions (id, status, started_at, night_date, hr_enabled, unifi_camera_id)
         VALUES ($1, 'recording', $2, $3, $4, $5)
-    """, session_id, started_dt, night_dt, hr_enabled, camera_id)
+    """,
+        session_id,
+        started_dt,
+        night_dt,
+        hr_enabled,
+        camera_id,
+    )
     return await get_session(session_id)
 
 
@@ -430,11 +515,14 @@ async def get_session_detail(session_id: str) -> dict | None:
         return None
 
     pool = await get_pool()
-    rows = await pool.fetch("""
+    rows = await pool.fetch(
+        """
         SELECT id, filename, start_utc, end_utc, start_local, end_local,
                duration_sec, processed
         FROM videos WHERE session_id = $1 ORDER BY start_local
-    """, session_id)
+    """,
+        session_id,
+    )
     videos = [_video_row_to_dict(r) for r in rows]
 
     processed_ids = [v["id"] for v in videos if v["processed"]]
@@ -463,6 +551,7 @@ def _session_to_dict(row) -> dict:
 
 
 # ── Dashboard ───────────────────────────────────────────────────────
+
 
 async def get_dashboard_summary() -> dict:
     """Aggregate stats across all analyzed sessions using SQL — no event loading."""
@@ -493,25 +582,28 @@ async def get_dashboard_summary() -> dict:
         hours = r["total_hours"] or 0
         plm_count = r["plm_count"]
         plmi = round(plm_count / hours, 1) if hours > 0 else 0
-        sessions.append({
-            "session_id": r["session_id"],
-            "night_date": r["night_date"].isoformat(),
-            "total_hours": round(hours, 2),
-            "plmi": plmi,
-            "plm_count": plm_count,
-            "series_count": r["series_count"],
-            "body_movements": r["body_count"],
-            "recording_hours": round(hours, 2),
-            "hr_enabled": r["hr_enabled"],
-            "started_at": r["started_at"].isoformat() if r["started_at"] else None,
-            "arousal_pct": None,
-            "plmai": None,
-        })
+        sessions.append(
+            {
+                "session_id": r["session_id"],
+                "night_date": r["night_date"].isoformat(),
+                "total_hours": round(hours, 2),
+                "plmi": plmi,
+                "plm_count": plm_count,
+                "series_count": r["series_count"],
+                "body_movements": r["body_count"],
+                "recording_hours": round(hours, 2),
+                "hr_enabled": r["hr_enabled"],
+                "started_at": r["started_at"].isoformat() if r["started_at"] else None,
+                "arousal_pct": None,
+                "plmai": None,
+            }
+        )
 
     # Arousal stats for HR-enabled sessions
     session_ids_with_hr = [s["session_id"] for s in sessions if s["hr_enabled"]]
     if session_ids_with_hr:
-        arousal_rows = await pool.fetch("""
+        arousal_rows = await pool.fetch(
+            """
             SELECT
                 v.session_id,
                 COUNT(e.*) FILTER (WHERE e.is_plm) as plm_count,
@@ -523,7 +615,9 @@ async def get_dashboard_summary() -> dict:
             JOIN videos v ON e.video_id = v.id AND v.processed = true
             WHERE v.session_id = ANY($1)
             GROUP BY v.session_id
-        """, session_ids_with_hr)
+        """,
+            session_ids_with_hr,
+        )
 
         arousal_map = {}
         for ar in arousal_rows:
@@ -561,24 +655,43 @@ async def get_dashboard_summary() -> dict:
     aggregate_hourly = []
     for hr in hourly_rows:
         h = hr["hour_offset"]
-        aggregate_hourly.append({
-            "hour": h,
-            "label": f"Hour {h + 1}",
-            "avg_plm": round(hr["plm_count"] / total_nights, 1),
-            "avg_body": round(hr["body_count"] / total_nights, 1),
-            "night_count": hr["night_count"],
-        })
+        aggregate_hourly.append(
+            {
+                "hour": h,
+                "label": f"Hour {h + 1}",
+                "avg_plm": round(hr["plm_count"] / total_nights, 1),
+                "avg_body": round(hr["body_count"] / total_nights, 1),
+                "night_count": hr["night_count"],
+            }
+        )
 
     return {"sessions": sessions, "aggregate_hourly": aggregate_hourly}
 
 
-async def insert_video(video_id: str, filename: str, start_utc: str, end_utc: str,
-                       start_local: str, end_local: str, duration_sec: float,
-                       session_id: str | None = None):
+async def insert_video(
+    video_id: str,
+    filename: str,
+    start_utc: str,
+    end_utc: str,
+    start_local: str,
+    end_local: str,
+    duration_sec: float,
+    session_id: str | None = None,
+):
     pool = await get_pool()
-    await pool.execute("""
+    await pool.execute(
+        """
         INSERT INTO videos (id, filename, start_utc, end_utc, start_local, end_local,
                            duration_sec, session_id)
         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
         ON CONFLICT (id) DO UPDATE SET session_id = COALESCE(EXCLUDED.session_id, videos.session_id)
-    """, video_id, filename, start_utc, end_utc, start_local, end_local, duration_sec, session_id)
+    """,
+        video_id,
+        filename,
+        start_utc,
+        end_utc,
+        start_local,
+        end_local,
+        duration_sec,
+        session_id,
+    )

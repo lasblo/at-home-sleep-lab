@@ -16,8 +16,14 @@ import session_manager
 import unifi
 from arousal import compute_video_arousal
 
-VIDEOS_DIR = Path(os.environ.get("VIDEOS_DIR", str(Path(__file__).resolve().parent.parent / "videos")))
-HR_INPUT_DIR = Path(os.environ.get("HR_INPUT_DIR", str(Path(__file__).resolve().parent.parent / "hr_input")))
+VIDEOS_DIR = Path(
+    os.environ.get("VIDEOS_DIR", str(Path(__file__).resolve().parent.parent / "videos"))
+)
+HR_INPUT_DIR = Path(
+    os.environ.get(
+        "HR_INPUT_DIR", str(Path(__file__).resolve().parent.parent / "hr_input")
+    )
+)
 VIDEOS_DIR.mkdir(parents=True, exist_ok=True)
 HR_INPUT_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -58,6 +64,7 @@ app.add_middleware(
 
 
 # ── Sessions ────────────────────────────────────────────────────────
+
 
 @app.post("/api/sessions/start")
 async def start_session():
@@ -101,6 +108,7 @@ async def session_detail(session_id: str):
 
 # ── Settings ────────────────────────────────────────────────────────
 
+
 @app.get("/api/settings/{key}")
 async def get_setting(key: str):
     value = await db.get_setting(key)
@@ -124,24 +132,22 @@ async def set_setting(key: str, request: Request):
 
 # ── UniFi Protect ───────────────────────────────────────────────────
 
+
 @app.post("/api/unifi/test")
 async def unifi_test(request: Request):
     body = await request.json()
-    return await unifi.test_connection(
-        body["host"], body["username"], body["password"]
-    )
+    return await unifi.test_connection(body["host"], body["username"], body["password"])
 
 
 @app.post("/api/unifi/cameras")
 async def unifi_cameras(request: Request):
     body = await request.json()
-    cameras = await unifi.list_cameras(
-        body["host"], body["username"], body["password"]
-    )
+    cameras = await unifi.list_cameras(body["host"], body["username"], body["password"])
     return {"cameras": cameras}
 
 
 # ── Video Serving ───────────────────────────────────────────────────
+
 
 @app.get("/api/videos/{filename:path}")
 async def serve_video(filename: str, request: Request):
@@ -157,13 +163,18 @@ async def serve_video(filename: str, request: Request):
         if not m:
             raise HTTPException(416, "Invalid range")
         start = int(m.group(1))
-        end = int(m.group(2)) if m.group(2) else min(start + 2 * 1024 * 1024, file_size - 1)
+        end = (
+            int(m.group(2))
+            if m.group(2)
+            else min(start + 2 * 1024 * 1024, file_size - 1)
+        )
         end = min(end, file_size - 1)
         with open(path, "rb") as f:
             f.seek(start)
             data = f.read(end - start + 1)
         return Response(
-            content=data, status_code=206,
+            content=data,
+            status_code=206,
             headers={
                 "Content-Range": f"bytes {start}-{end}/{file_size}",
                 "Accept-Ranges": "bytes",
@@ -176,6 +187,7 @@ async def serve_video(filename: str, request: Request):
 
 
 # ── Results (video analysis) ───────────────────────────────────────
+
 
 @app.get("/api/results")
 async def list_results():
@@ -193,7 +205,9 @@ async def video_results(video_id: str):
     duration = video.get("duration_sec", 3600)
     if start_local and data.get("events"):
         start_epoch = datetime.fromisoformat(start_local).timestamp()
-        hr_readings = await db.get_hr_range(start_epoch - 60, start_epoch + duration + 60)
+        hr_readings = await db.get_hr_range(
+            start_epoch - 60, start_epoch + duration + 60
+        )
         if hr_readings:
             data["events"], data["arousal_summary"] = compute_video_arousal(
                 data["events"], start_local, hr_readings, duration
@@ -203,6 +217,7 @@ async def video_results(video_id: str):
 
 
 # ── Heart Rate ──────────────────────────────────────────────────────
+
 
 @app.get("/api/hr/status")
 async def hr_status():
@@ -236,12 +251,19 @@ async def hr_ingest():
 
 # ── BLE Proxy (forwards to host BLE service) ───────────────────────
 
+
 async def _ble_url() -> str:
     ble_settings = await db.get_setting("bluetooth")
     return (ble_settings or {}).get("url", "http://host.docker.internal:8001")
 
 
-async def _ble_proxy(method: str, endpoint: str, json_body=None, timeout: float = 20, error_extra: dict | None = None):
+async def _ble_proxy(
+    method: str,
+    endpoint: str,
+    json_body=None,
+    timeout: float = 20,
+    error_extra: dict | None = None,
+):
     url = await _ble_url()
     try:
         async with httpx.AsyncClient(timeout=timeout) as client:
@@ -276,4 +298,5 @@ async def ble_stop():
 
 if __name__ == "__main__":
     import uvicorn
+
     uvicorn.run(app, host="0.0.0.0", port=8000)

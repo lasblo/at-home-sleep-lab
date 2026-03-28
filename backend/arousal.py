@@ -47,15 +47,25 @@ def compute_arousal_for_event(
     det_hrs = hr_values[det_lo:det_hi]
 
     if len(det_hrs) < MIN_SUSTAINED_READINGS:
-        return {"has_arousal": False, "pre_baseline_hr": round(baseline_hr, 1), "reason": "insufficient post-onset HR data"}
+        return {
+            "has_arousal": False,
+            "pre_baseline_hr": round(baseline_hr, 1),
+            "reason": "insufficient post-onset HR data",
+        }
 
-    standard_threshold = min(baseline_hr + STANDARD_BPM_THRESHOLD, baseline_hr * (1 + STANDARD_PCT_THRESHOLD))
-    strict_threshold = min(baseline_hr + STRICT_BPM_THRESHOLD, baseline_hr * (1 + STRICT_PCT_THRESHOLD))
+    standard_threshold = min(
+        baseline_hr + STANDARD_BPM_THRESHOLD, baseline_hr * (1 + STANDARD_PCT_THRESHOLD)
+    )
+    strict_threshold = min(
+        baseline_hr + STRICT_BPM_THRESHOLD, baseline_hr * (1 + STRICT_PCT_THRESHOLD)
+    )
 
-    if baseline_hr + STANDARD_BPM_THRESHOLD <= baseline_hr * (1 + STANDARD_PCT_THRESHOLD):
+    if baseline_hr + STANDARD_BPM_THRESHOLD <= baseline_hr * (
+        1 + STANDARD_PCT_THRESHOLD
+    ):
         threshold_used = f"+{STANDARD_BPM_THRESHOLD:.0f}bpm"
     else:
-        threshold_used = f"+{STANDARD_PCT_THRESHOLD*100:.0f}%"
+        threshold_used = f"+{STANDARD_PCT_THRESHOLD * 100:.0f}%"
 
     first_exceed_idx = None
     for i, hr in enumerate(det_hrs):
@@ -76,7 +86,11 @@ def compute_arousal_for_event(
             "threshold_used": threshold_used,
             "max_hr_in_window": int(max_hr_in_window),
             "reason": f"no HR exceeded threshold within {MAX_ONSET_DELAY_SEC}s onset window"
-                      + (f" (max {max_hr_in_window} at >{MAX_ONSET_DELAY_SEC}s)" if any_exceed else ""),
+            + (
+                f" (max {max_hr_in_window} at >{MAX_ONSET_DELAY_SEC}s)"
+                if any_exceed
+                else ""
+            ),
         }
 
     onset_delay = det_epochs[first_exceed_idx] - event_epoch
@@ -121,7 +135,9 @@ def compute_arousal_for_event(
     duration = arousal_end_epoch - arousal_onset_epoch
 
     magnitude_bpm = peak_hr - baseline_hr
-    magnitude_pct = (peak_hr - baseline_hr) / baseline_hr * 100 if baseline_hr > 0 else 0
+    magnitude_pct = (
+        (peak_hr - baseline_hr) / baseline_hr * 100 if baseline_hr > 0 else 0
+    )
     strict_met = peak_hr >= strict_threshold
 
     return {
@@ -199,14 +215,26 @@ def compute_video_arousal(
         return events, None
 
     summary = {
-        "plmai": round(arousal_count / recording_hours, 1) if recording_hours > 0 else 0,
+        "plmai": round(arousal_count / recording_hours, 1)
+        if recording_hours > 0
+        else 0,
         "arousal_count": arousal_count,
-        "arousal_percentage": round(arousal_count / plm_count * 100, 1) if plm_count > 0 else 0,
-        "mean_magnitude_bpm": round(sum(magnitudes) / len(magnitudes), 1) if magnitudes else 0,
-        "mean_duration_sec": round(sum(durations) / len(durations), 1) if durations else 0,
+        "arousal_percentage": round(arousal_count / plm_count * 100, 1)
+        if plm_count > 0
+        else 0,
+        "mean_magnitude_bpm": round(sum(magnitudes) / len(magnitudes), 1)
+        if magnitudes
+        else 0,
+        "mean_duration_sec": round(sum(durations) / len(durations), 1)
+        if durations
+        else 0,
         "strict_arousal_count": strict_count,
-        "strict_arousal_percentage": round(strict_count / plm_count * 100, 1) if plm_count > 0 else 0,
-        "hr_coverage_pct": round(plm_with_hr / plm_count * 100, 1) if plm_count > 0 else 0,
+        "strict_arousal_percentage": round(strict_count / plm_count * 100, 1)
+        if plm_count > 0
+        else 0,
+        "hr_coverage_pct": round(plm_with_hr / plm_count * 100, 1)
+        if plm_count > 0
+        else 0,
     }
 
     return events, summary

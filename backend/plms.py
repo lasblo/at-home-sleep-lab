@@ -1,13 +1,15 @@
 # AASM PLMS scoring criteria
-MIN_MOVEMENT_DURATION = 0.4   # seconds (slightly relaxed from AASM 0.5s for video frame timing)
+MIN_MOVEMENT_DURATION = (
+    0.4  # seconds (slightly relaxed from AASM 0.5s for video frame timing)
+)
 MAX_MOVEMENT_DURATION = 10.0  # seconds
-MIN_INTERVAL = 4.5            # seconds (onset-to-onset, slight tolerance for video frame timing)
-MAX_INTERVAL = 90.0           # seconds
-MIN_SERIES_LENGTH = 4         # minimum events for a PLM series
+MIN_INTERVAL = 4.5  # seconds (onset-to-onset, slight tolerance for video frame timing)
+MAX_INTERVAL = 90.0  # seconds
+MIN_SERIES_LENGTH = 4  # minimum events for a PLM series
 
 # Body movement classification (position changes, not limb movements)
 BODY_MOVEMENT_AMP_THRESHOLD = 25.0  # high amplitude
-BODY_MOVEMENT_DUR_THRESHOLD = 3.0   # AND long duration → likely a position change
+BODY_MOVEMENT_DUR_THRESHOLD = 3.0  # AND long duration → likely a position change
 
 
 def _classify_event(event: dict) -> str:
@@ -56,9 +58,13 @@ def apply_plms_criteria(events: list[dict], recording_hours: float) -> dict:
         if e["movement_type"] == "body":
             plm_reject_reason = "body movement (excluded from PLM series)"
         elif dur < MIN_MOVEMENT_DURATION:
-            plm_reject_reason = f"duration {dur:.2f}s < {MIN_MOVEMENT_DURATION}s minimum"
+            plm_reject_reason = (
+                f"duration {dur:.2f}s < {MIN_MOVEMENT_DURATION}s minimum"
+            )
         elif dur > MAX_MOVEMENT_DURATION:
-            plm_reject_reason = f"duration {dur:.2f}s > {MAX_MOVEMENT_DURATION}s maximum"
+            plm_reject_reason = (
+                f"duration {dur:.2f}s > {MAX_MOVEMENT_DURATION}s maximum"
+            )
 
         debug["body_classification"] = e["movement_type"]
         debug["body_reason"] = body_reason
@@ -125,14 +131,18 @@ def apply_plms_criteria(events: list[dict], recording_hours: float) -> dict:
                 intervals.append(event["onset_sec"] - chain[i - 1]["onset_sec"])
             plm_count += 1
 
-        series_list.append({
-            "id": series_idx,
-            "event_count": len(chain),
-            "event_timestamps": event_timestamps,
-            "mean_interval_sec": round(sum(intervals) / len(intervals), 1) if intervals else 0,
-            "start_sec": chain[0]["timestamp_sec"],
-            "end_sec": chain[-1]["timestamp_sec"],
-        })
+        series_list.append(
+            {
+                "id": series_idx,
+                "event_count": len(chain),
+                "event_timestamps": event_timestamps,
+                "mean_interval_sec": round(sum(intervals) / len(intervals), 1)
+                if intervals
+                else 0,
+                "start_sec": chain[0]["timestamp_sec"],
+                "end_sec": chain[-1]["timestamp_sec"],
+            }
+        )
 
     # Rebuild full event list preserving order
     plm_map = {}
@@ -151,7 +161,9 @@ def apply_plms_criteria(events: list[dict], recording_hours: float) -> dict:
     for e in plm_candidates:
         if e["timestamp_sec"] not in _assigned:
             debug = e.get("debug", {})
-            debug["plm_series_reason"] = "chain too short (< 4 consecutive events with valid intervals)"
+            debug["plm_series_reason"] = (
+                "chain too short (< 4 consecutive events with valid intervals)"
+            )
             e["debug"] = debug
 
     result_events = []
@@ -167,7 +179,9 @@ def apply_plms_criteria(events: list[dict], recording_hours: float) -> dict:
         elif debug.get("plm_reject_reason"):
             debug["plm_series_reason"] = debug["plm_reject_reason"]
         elif not debug.get("plm_series_reason"):
-            debug["plm_series_reason"] = "chain too short (< 4 consecutive events with valid intervals)"
+            debug["plm_series_reason"] = (
+                "chain too short (< 4 consecutive events with valid intervals)"
+            )
         e["debug"] = debug
         result_events.append(e)
 

@@ -21,7 +21,9 @@ from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 
 app = FastAPI(title="BLE Service")
-app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
+app.add_middleware(
+    CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"]
+)
 
 HR_SERVICE = "0000180d-0000-1000-8000-00805f9b34fb"
 HR_CHAR = "00002a37-0000-1000-8000-00805f9b34fb"
@@ -44,12 +46,16 @@ def _parse_hr(data: bytearray) -> int:
 
 
 def _write_status(status: str, device: str | None = None, hr: int | None = None):
-    HR_STATUS_FILE.write_text(json.dumps({
-        "status": status,
-        "device": device,
-        "hr": hr,
-        "timestamp": datetime.now(timezone.utc).isoformat(),
-    }))
+    HR_STATUS_FILE.write_text(
+        json.dumps(
+            {
+                "status": status,
+                "device": device,
+                "hr": hr,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            }
+        )
+    )
 
 
 def _hr_file() -> Path:
@@ -57,6 +63,7 @@ def _hr_file() -> Path:
 
 
 # ── Discovery ───────────────────────────────────────────────────────
+
 
 @app.get("/discover")
 async def discover():
@@ -70,20 +77,24 @@ async def discover():
     for d, adv in devices.values():
         has_hr = HR_SERVICE in (adv.service_uuids or [])
         if has_hr:
-            hr_devices.append({
-                "address": d.address,
-                "name": d.name or "Unknown",
-            })
+            hr_devices.append(
+                {
+                    "address": d.address,
+                    "name": d.name or "Unknown",
+                }
+            )
 
     return {"ok": True, "devices": hr_devices}
 
 
 # ── Test Connection ─────────────────────────────────────────────────
 
+
 @app.post("/test")
 async def test(request_body: dict | None = None):
     """Connect to a device briefly and read one HR value to verify it works."""
     import starlette.requests
+
     # Parse body
     if request_body is None:
         return {"ok": False, "error": "No request body"}
@@ -108,7 +119,10 @@ async def test(request_body: dict | None = None):
             try:
                 await asyncio.wait_for(event.wait(), timeout=10)
             except asyncio.TimeoutError:
-                return {"ok": False, "error": "Connected but no HR data received within 10s"}
+                return {
+                    "ok": False,
+                    "error": "Connected but no HR data received within 10s",
+                }
             finally:
                 await client.stop_notify(HR_CHAR)
 
@@ -119,6 +133,7 @@ async def test(request_body: dict | None = None):
 
 
 # ── Start/Stop Streaming ───────────────────────────────────────────
+
 
 @app.post("/start")
 async def start(request_body: dict | None = None):
@@ -171,6 +186,7 @@ async def status():
 
 # ── Streaming Loop ──────────────────────────────────────────────────
 
+
 async def _stream_hr(address: str):
     """Connect to device and stream HR data to JSONL files."""
     global _readings_count
@@ -215,7 +231,11 @@ async def _stream_hr(address: str):
                     f.write(json.dumps(entry) + "\n")
 
                 _write_status("streaming", device=address, hr=hr)
-                print(f"\r  HR: {hr} bpm  ({_readings_count} readings)  ", end="", flush=True)
+                print(
+                    f"\r  HR: {hr} bpm  ({_readings_count} readings)  ",
+                    end="",
+                    flush=True,
+                )
 
             await client.start_notify(HR_CHAR, callback)
 
@@ -235,6 +255,7 @@ async def _stream_hr(address: str):
 
 
 # ── Main ────────────────────────────────────────────────────────────
+
 
 def _shutdown(signum, frame):
     if _stream_task and not _stream_task.done():

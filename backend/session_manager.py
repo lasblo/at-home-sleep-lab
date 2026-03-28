@@ -53,6 +53,7 @@ def _night_date(dt: datetime) -> str:
 # Public API
 # ---------------------------------------------------------------------------
 
+
 async def start_session() -> dict:
     """Start a new sleep session.
 
@@ -74,7 +75,9 @@ async def start_session() -> dict:
 
     unifi_settings = await db.get_setting("unifi")
     if not unifi_settings:
-        raise RuntimeError("UniFi settings not configured. Set the 'unifi' key in settings first.")
+        raise RuntimeError(
+            "UniFi settings not configured. Set the 'unifi' key in settings first."
+        )
 
     camera_id = unifi_settings.get("camera_id")
     if not camera_id:
@@ -103,11 +106,15 @@ async def start_session() -> dict:
             await _start_hr(ble_url, device_address)
             logger.info("HR listener started via BLE service at %s", ble_url)
         except Exception:
-            logger.exception("Failed to start HR listener — session continues without HR")
+            logger.exception(
+                "Failed to start HR listener — session continues without HR"
+            )
 
     VIDEOS_DIR.mkdir(parents=True, exist_ok=True)
     _fetch_task = asyncio.create_task(_fetch_loop(session_id, camera_id))
-    logger.info("Session %s started (night %s, camera %s)", session_id, night, camera_id)
+    logger.info(
+        "Session %s started (night %s, camera %s)", session_id, night, camera_id
+    )
 
     return session
 
@@ -193,7 +200,9 @@ async def stop_session() -> dict:
     result = await db.get_session(session_id)
     logger.info(
         "Session %s stopped (%.2f hours, night %s)",
-        session_id, total_hours, session.get("night_date"),
+        session_id,
+        total_hours,
+        session.get("night_date"),
     )
     return result
 
@@ -201,6 +210,7 @@ async def stop_session() -> dict:
 # ---------------------------------------------------------------------------
 # Background fetch loop
 # ---------------------------------------------------------------------------
+
 
 async def _fetch_loop(session_id: str, camera_id: str):
     """Background task: fetch and process video every hour during active session.
@@ -220,15 +230,21 @@ async def _fetch_loop(session_id: str, camera_id: str):
         while True:
             now = datetime.now(timezone.utc)
             # Next hour boundary
-            next_hour = (now + timedelta(hours=1)).replace(minute=0, second=0, microsecond=0)
+            next_hour = (now + timedelta(hours=1)).replace(
+                minute=0, second=0, microsecond=0
+            )
             sleep_seconds = (next_hour - now).total_seconds()
             logger.debug(
-                "Fetch loop: sleeping %.0f s until %s", sleep_seconds, next_hour.isoformat()
+                "Fetch loop: sleeping %.0f s until %s",
+                sleep_seconds,
+                next_hour.isoformat(),
             )
             await asyncio.sleep(sleep_seconds)
 
             # The chunk covers the hour that just ended
-            chunk_end = datetime.now(timezone.utc).replace(minute=0, second=0, microsecond=0)
+            chunk_end = datetime.now(timezone.utc).replace(
+                minute=0, second=0, microsecond=0
+            )
             chunk_start = chunk_end - timedelta(hours=1)
 
             try:
@@ -236,7 +252,8 @@ async def _fetch_loop(session_id: str, camera_id: str):
             except Exception:
                 logger.exception(
                     "Error fetching/processing chunk %s – %s",
-                    chunk_start.isoformat(), chunk_end.isoformat(),
+                    chunk_start.isoformat(),
+                    chunk_end.isoformat(),
                 )
 
             # Ingest HR readings that may have accumulated
@@ -253,6 +270,7 @@ async def _fetch_loop(session_id: str, camera_id: str):
 # ---------------------------------------------------------------------------
 # Single chunk fetch + process
 # ---------------------------------------------------------------------------
+
 
 async def _fetch_and_process(
     session_id: str,
@@ -283,7 +301,9 @@ async def _fetch_and_process(
 
     logger.info(
         "Fetching video: camera=%s, %s – %s",
-        camera_id, start.isoformat(), end.isoformat(),
+        camera_id,
+        start.isoformat(),
+        end.isoformat(),
     )
     video_bytes = await client.get_video(camera_id, start_ms, end_ms)
 
@@ -322,12 +342,15 @@ async def _fetch_and_process(
         plms_result["series"],
         plms_result["summary"],
     )
-    logger.info("Saved results for %s (PLMs: %d)", filename, plms_result["summary"]["plm_count"])
+    logger.info(
+        "Saved results for %s (PLMs: %d)", filename, plms_result["summary"]["plm_count"]
+    )
 
 
 # ---------------------------------------------------------------------------
 # BLE HR service helpers
 # ---------------------------------------------------------------------------
+
 
 async def _start_hr(ble_url: str, device_address: str | None = None):
     """Call BLE service to start HR monitoring for a specific device."""

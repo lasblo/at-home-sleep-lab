@@ -4,17 +4,19 @@ from scipy.signal import find_peaks
 from pathlib import Path
 
 # --- Tunable parameters ---
-FRAME_SKIP = 3          # Process every Nth frame (3 at 20fps ≈ 6.7Hz)
-GAUSSIAN_KERNEL = 5     # Blur kernel for IR noise reduction
-ROI_Y_FRACTION = 0.5    # ROI starts at 50% of frame height (bottom half)
-GRID_COLS = 8           # Grid columns for spatial analysis
-GRID_ROWS = 4           # Grid rows for spatial analysis
-SMOOTH_WINDOW = 3       # Moving average window in samples
+FRAME_SKIP = 3  # Process every Nth frame (3 at 20fps ≈ 6.7Hz)
+GAUSSIAN_KERNEL = 5  # Blur kernel for IR noise reduction
+ROI_Y_FRACTION = 0.5  # ROI starts at 50% of frame height (bottom half)
+GRID_COLS = 8  # Grid columns for spatial analysis
+GRID_ROWS = 4  # Grid rows for spatial analysis
+SMOOTH_WINDOW = 3  # Moving average window in samples
 BASELINE_WINDOW_SEC = 60  # Rolling baseline window in seconds
 MIN_SPATIAL_VARIANCE = 0.35  # Minimum spatial variance to consider as real movement
-MIN_ACTIVE_CELLS = 0.03    # Minimum fraction of cells with above-average motion
+MIN_ACTIVE_CELLS = 0.03  # Minimum fraction of cells with above-average motion
 PEAK_PROMINENCE = 0.03  # Minimum prominence for peak detection on localized signal
-MIN_PEAK_DISTANCE_SEC = 3.0  # Minimum seconds between detected peaks (avoids double-counting)
+MIN_PEAK_DISTANCE_SEC = (
+    3.0  # Minimum seconds between detected peaks (avoids double-counting)
+)
 
 
 def extract_motion_signal(video_path: str | Path, progress_cb=None) -> dict:
@@ -43,8 +45,8 @@ def extract_motion_signal(video_path: str | Path, progress_cb=None) -> dict:
 
     sample_rate = fps / FRAME_SKIP
     timestamps = []
-    raw_diffs = []          # Mean absolute diff (for visualization)
-    localized_motion = []   # Spatially-filtered motion (for detection)
+    raw_diffs = []  # Mean absolute diff (for visualization)
+    localized_motion = []  # Spatially-filtered motion (for detection)
     spatial_variances = []  # For debugging/tuning
 
     prev_frame = None
@@ -56,7 +58,11 @@ def extract_motion_signal(video_path: str | Path, progress_cb=None) -> dict:
             break
 
         if frame_idx % FRAME_SKIP == 0:
-            gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY) if len(frame.shape) == 3 else frame
+            gray = (
+                cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+                if len(frame.shape) == 3
+                else frame
+            )
             roi = gray[roi_y_start:, :]
             blurred = cv2.GaussianBlur(roi, (GAUSSIAN_KERNEL, GAUSSIAN_KERNEL), 0)
 
@@ -73,7 +79,9 @@ def extract_motion_signal(video_path: str | Path, progress_cb=None) -> dict:
                         y2 = (r + 1) * cell_h
                         x1 = c * cell_w
                         x2 = (c + 1) * cell_w
-                        cell_means[r * GRID_COLS + c] = np.mean(diff[y1:y2, x1:x2].astype(np.float32))
+                        cell_means[r * GRID_COLS + c] = np.mean(
+                            diff[y1:y2, x1:x2].astype(np.float32)
+                        )
 
                 # Spatial variance: coefficient of variation across cells
                 cell_mean_avg = cell_means.mean()
@@ -132,6 +140,7 @@ def _smooth(signal: np.ndarray, window: int) -> np.ndarray:
 def _rolling_percentile(signal: np.ndarray, window: int, pct: int = 50) -> np.ndarray:
     """Compute rolling percentile for adaptive baseline using scipy."""
     from scipy.ndimage import percentile_filter
+
     return percentile_filter(signal, percentile=pct, size=window, mode="nearest")
 
 
@@ -188,7 +197,10 @@ def detect_events(motion_signal: dict) -> list[dict]:
             onset_idx -= 1
 
         offset_idx = peak_idx
-        while offset_idx < len(smoothed) - 1 and smoothed[offset_idx + 1] > cross_threshold:
+        while (
+            offset_idx < len(smoothed) - 1
+            and smoothed[offset_idx + 1] > cross_threshold
+        ):
             offset_idx += 1
 
         onset_time = float(timestamps[max(onset_idx, 0)])
@@ -197,27 +209,35 @@ def detect_events(motion_signal: dict) -> list[dict]:
         min_dur = 2.0 / sample_rate
 
         peak_height = float(normalized[peak_idx])
-        peak_prominence = float(properties["prominences"][list(peaks).index(peak_idx)]) if "prominences" in properties else None
+        peak_prominence = (
+            float(properties["prominences"][list(peaks).index(peak_idx)])
+            if "prominences" in properties
+            else None
+        )
 
-        events.append({
-            "timestamp_sec": round(peak_time, 2),
-            "onset_sec": round(onset_time, 2),
-            "duration_sec": round(max(duration, min_dur), 2),
-            "amplitude": round(amplitude, 6),
-            "spatial_variance": round(sv, 3),
-            "peak_index": int(peak_idx),
-            "debug": {
-                "raw_localized": round(float(localized[peak_idx]), 6),
-                "smoothed": round(amplitude, 6),
-                "baseline": round(local_base, 6),
-                "above_baseline": round(float(above_baseline[peak_idx]), 6),
-                "normalized_height": round(peak_height, 4),
-                "prominence": round(peak_prominence, 4) if peak_prominence is not None else None,
-                "onset_threshold": round(cross_threshold, 6),
-                "sv_threshold": MIN_SPATIAL_VARIANCE,
-                "sv_passed": sv >= MIN_SPATIAL_VARIANCE,
-            },
-        })
+        events.append(
+            {
+                "timestamp_sec": round(peak_time, 2),
+                "onset_sec": round(onset_time, 2),
+                "duration_sec": round(max(duration, min_dur), 2),
+                "amplitude": round(amplitude, 6),
+                "spatial_variance": round(sv, 3),
+                "peak_index": int(peak_idx),
+                "debug": {
+                    "raw_localized": round(float(localized[peak_idx]), 6),
+                    "smoothed": round(amplitude, 6),
+                    "baseline": round(local_base, 6),
+                    "above_baseline": round(float(above_baseline[peak_idx]), 6),
+                    "normalized_height": round(peak_height, 4),
+                    "prominence": round(peak_prominence, 4)
+                    if peak_prominence is not None
+                    else None,
+                    "onset_threshold": round(cross_threshold, 6),
+                    "sv_threshold": MIN_SPATIAL_VARIANCE,
+                    "sv_passed": sv >= MIN_SPATIAL_VARIANCE,
+                },
+            }
+        )
 
     return events
 
@@ -243,6 +263,8 @@ def process_video(video_path: str | Path, progress_cb=None) -> dict:
             "frame_count": motion["frame_count"],
             "width": motion["width"],
             "height": motion["height"],
-            "duration_sec": motion["frame_count"] / motion["fps"] if motion["fps"] > 0 else 0,
+            "duration_sec": motion["frame_count"] / motion["fps"]
+            if motion["fps"] > 0
+            else 0,
         },
     }
