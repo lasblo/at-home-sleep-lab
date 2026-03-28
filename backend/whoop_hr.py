@@ -27,8 +27,14 @@ HR_CHAR = "00002a37-0000-1000-8000-00805f9b34fb"
 DEVICE_NAME = "MG"  # WHOOP device name filter
 
 OUTPUT_DIR = Path(__file__).parent.parent / "output"
-HR_FILE = OUTPUT_DIR / "hr_live.jsonl"
+HR_DIR = OUTPUT_DIR / "hr"
 HR_STATUS_FILE = OUTPUT_DIR / "hr_status.json"
+
+
+def hr_file_for_now() -> Path:
+    """Return date-based HR file path, e.g. output/hr/2026-03-27.jsonl.
+    Uses UTC date so a full night stays in one file even across local midnight."""
+    return HR_DIR / f"{datetime.now(timezone.utc).strftime('%Y-%m-%d')}.jsonl"
 
 
 def parse_hr(data: bytearray) -> int:
@@ -51,6 +57,7 @@ def write_status(status: str, device: str = None, hr: int = None):
 
 async def main():
     OUTPUT_DIR.mkdir(exist_ok=True)
+    HR_DIR.mkdir(exist_ok=True)
 
     print(f"Scanning for WHOOP device '{DEVICE_NAME}'...")
     write_status("scanning")
@@ -82,7 +89,7 @@ async def main():
     readings = 0
 
     async with BleakClient(hr_device) as client:
-        print(f"Connected! Logging HR to {HR_FILE}")
+        print(f"Connected! Logging HR to {HR_DIR}/<date>.jsonl")
         print("Press Ctrl+C to stop.\n")
         write_status("connected", device=hr_device.name)
 
@@ -99,7 +106,7 @@ async def main():
                 "hr": hr,
                 "device": hr_device.name,
             }
-            with open(HR_FILE, "a") as f:
+            with open(hr_file_for_now(), "a") as f:
                 f.write(json.dumps(entry) + "\n")
 
             # Update status
@@ -118,7 +125,7 @@ async def main():
         finally:
             write_status("disconnected", device=hr_device.name)
             print(f"Total readings: {readings}")
-            print(f"Data saved to: {HR_FILE}")
+            print(f"Data saved to: {HR_DIR}/")
 
 
 if __name__ == "__main__":

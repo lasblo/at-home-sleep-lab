@@ -97,6 +97,9 @@ export default function App() {
   const [seekTo, setSeekTo] = useState(null)
   const [currentTime, setCurrentTime] = useState(0)
 
+  // Heart rate data for current video
+  const [hrData, setHrData] = useState(null)
+
   // Processing
   const [processing, setProcessing] = useState({ running: false, progress: {} })
   const pollRef = useRef(null)
@@ -149,11 +152,20 @@ export default function App() {
 
   // Load video results when selected
   useEffect(() => {
-    if (!selectedVideoId) { setVideoResults(null); return }
+    if (!selectedVideoId) { setVideoResults(null); setHrData(null); return }
     fetch(`/api/results/${selectedVideoId}`)
       .then(r => r.ok ? r.json() : null)
-      .then(setVideoResults)
-      .catch(() => setVideoResults(null))
+      .then(data => {
+        setVideoResults(data)
+        // Fetch HR data for this video's time range
+        if (data?.video?.start_local && data?.video?.end_local) {
+          fetch(`/api/hr/range?start=${encodeURIComponent(data.video.start_local)}&end=${encodeURIComponent(data.video.end_local)}`)
+            .then(r => r.ok ? r.json() : null)
+            .then(hr => setHrData(hr?.readings || null))
+            .catch(() => setHrData(null))
+        }
+      })
+      .catch(() => { setVideoResults(null); setHrData(null) })
   }, [selectedVideoId])
 
   const handleSelectNight = (nightDate) => {
@@ -253,6 +265,8 @@ export default function App() {
                     videoDuration={videoResults.video_info?.duration_sec || 3600}
                     onSeek={handleSeek}
                     currentTime={currentTime}
+                    hrData={hrData}
+                    videoStartEpoch={videoResults.video?.start_local ? new Date(videoResults.video.start_local).getTime() / 1000 : null}
                   />
                   <EventList
                     events={videoResults.events}

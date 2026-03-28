@@ -485,8 +485,38 @@ async def night_detail(night_date: str):
 
 # --- Heart Rate (WHOOP BLE) ---
 
-HR_FILE = OUTPUT_DIR / "hr_live.jsonl"
+HR_DIR = OUTPUT_DIR / "hr"
 HR_STATUS_FILE = OUTPUT_DIR / "hr_status.json"
+
+
+def _read_hr_files(start_epoch: float = 0, end_epoch: float = float("inf")) -> list[dict]:
+    """Read HR readings from date-based JSONL files, filtered by epoch range.
+    Also checks legacy hr_live.jsonl for backward compatibility."""
+    readings = []
+
+    # Date-based files in output/hr/
+    if HR_DIR.exists():
+        for f in sorted(HR_DIR.glob("*.jsonl")):
+            for line in open(f):
+                line = line.strip()
+                if not line:
+                    continue
+                entry = json.loads(line)
+                if start_epoch <= entry["epoch"] <= end_epoch:
+                    readings.append(entry)
+
+    # Legacy file (if exists, for old data)
+    legacy = OUTPUT_DIR / "hr_live.jsonl"
+    if legacy.exists():
+        for line in open(legacy):
+            line = line.strip()
+            if not line:
+                continue
+            entry = json.loads(line)
+            if start_epoch <= entry["epoch"] <= end_epoch:
+                readings.append(entry)
+
+    return readings
 
 
 @app.get("/api/hr/status")
@@ -500,22 +530,20 @@ async def hr_status():
 @app.get("/api/hr/live")
 async def hr_live(since: float = 0, limit: int = 500):
     """Get HR readings since a given epoch timestamp. Returns newest first."""
-    if not HR_FILE.exists():
-        return {"readings": [], "count": 0}
-
-    readings = []
-    with open(HR_FILE) as f:
-        for line in f:
-            line = line.strip()
-            if not line:
-                continue
-            entry = json.loads(line)
-            if entry["epoch"] > since:
-                readings.append(entry)
-
-    # Return newest first, limited
+    readings = _read_hr_files(start_epoch=since)
     readings.sort(key=lambda r: r["epoch"], reverse=True)
     return {"readings": readings[:limit], "count": len(readings)}
+
+
+@app.get("/api/hr/range")
+async def hr_range(start: str, end: str):
+    """Get HR readings between two ISO timestamps. For overlaying on video timeline."""
+    from datetime import datetime as dt
+    start_epoch = dt.fromisoformat(start).timestamp()
+    end_epoch = dt.fromisoformat(end).timestamp()
+    readings = _read_hr_files(start_epoch=start_epoch, end_epoch=end_epoch)
+    readings.sort(key=lambda r: r["epoch"])
+    return {"readings": readings, "count": len(readings)}
 
 
 @app.get("/api/hr/night/{night_date}")
@@ -531,19 +559,7 @@ async def hr_for_night(night_date: str):
     start = datetime.fromisoformat(night["start_local"]).timestamp()
     end = datetime.fromisoformat(night["end_local"]).timestamp()
 
-    if not HR_FILE.exists():
-        return {"readings": [], "night_date": night_date}
-
-    readings = []
-    with open(HR_FILE) as f:
-        for line in f:
-            line = line.strip()
-            if not line:
-                continue
-            entry = json.loads(line)
-            if start <= entry["epoch"] <= end:
-                readings.append(entry)
-
+    readings = _read_hr_files(start_epoch=start, end_epoch=end)
     readings.sort(key=lambda r: r["epoch"])
     return {"readings": readings, "night_date": night_date, "count": len(readings)}
 

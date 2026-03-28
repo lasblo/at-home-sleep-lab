@@ -1,7 +1,7 @@
 import { useRef, useEffect, useCallback } from 'react'
 
 const TIMELINE_HEIGHT = 140
-const PADDING = { top: 10, bottom: 30, left: 50, right: 20 }
+const PADDING = { top: 10, bottom: 30, left: 50, right: 36 }
 
 const styles = {
   container: {
@@ -39,7 +39,7 @@ function formatTimeAxis(sec) {
   return `${m}m`
 }
 
-export default function Timeline({ motionSignal, events, videoDuration, onSeek, currentTime }) {
+export default function Timeline({ motionSignal, events, videoDuration, onSeek, currentTime, hrData, videoStartEpoch }) {
   const canvasRef = useRef(null)
   const animRef = useRef(null)
   const isDraggingRef = useRef(false)
@@ -156,6 +156,52 @@ export default function Timeline({ motionSignal, events, videoDuration, onSeek, 
     }
     ctx.globalAlpha = 1
 
+    // Draw HR curve (right Y-axis)
+    if (hrData && hrData.length > 0 && videoStartEpoch) {
+      const hrMin = Math.min(...hrData.map(r => r.hr))
+      const hrMax = Math.max(...hrData.map(r => r.hr))
+      const hrRange = Math.max(hrMax - hrMin, 10) // at least 10bpm range
+      const hrBottom = Math.max(hrMin - 5, 30)
+      const hrTop = hrMax + 5
+
+      // HR Y-axis labels (right side)
+      ctx.fillStyle = 'rgba(236, 72, 153, 0.5)'
+      ctx.font = '9px ui-monospace, monospace'
+      ctx.textAlign = 'left'
+      const hrSteps = [hrBottom, Math.round((hrBottom + hrTop) / 2), hrTop]
+      for (const val of hrSteps) {
+        const y = PADDING.top + plotH * (1 - (val - hrBottom) / (hrTop - hrBottom))
+        ctx.fillText(`${val}`, w - PADDING.right + 2, y + 3)
+      }
+
+      // Draw HR line
+      ctx.beginPath()
+      let started = false
+      for (const r of hrData) {
+        const t = r.epoch - videoStartEpoch
+        if (t < 0 || t > videoDuration) continue
+        const x = xScale(t)
+        const y = PADDING.top + plotH * (1 - (r.hr - hrBottom) / (hrTop - hrBottom))
+        if (!started) { ctx.moveTo(x, y); started = true }
+        else ctx.lineTo(x, y)
+      }
+      ctx.strokeStyle = 'rgba(236, 72, 153, 0.6)'
+      ctx.lineWidth = 1.2
+      ctx.stroke()
+
+      // Gradient fill under HR curve
+      if (started) {
+        const gradient = ctx.createLinearGradient(0, PADDING.top, 0, PADDING.top + plotH)
+        gradient.addColorStop(0, 'rgba(236, 72, 153, 0.12)')
+        gradient.addColorStop(1, 'rgba(236, 72, 153, 0.02)')
+        ctx.lineTo(xScale(hrData[hrData.length - 1].epoch - videoStartEpoch), PADDING.top + plotH)
+        ctx.lineTo(xScale(Math.max(0, hrData[0].epoch - videoStartEpoch)), PADDING.top + plotH)
+        ctx.closePath()
+        ctx.fillStyle = gradient
+        ctx.fill()
+      }
+    }
+
     // Time axis
     ctx.fillStyle = '#8b8d97'
     ctx.font = '11px ui-monospace, monospace'
@@ -187,7 +233,7 @@ export default function Timeline({ motionSignal, events, videoDuration, onSeek, 
     ctx.font = '10px ui-monospace, monospace'
     ctx.textAlign = 'center'
     ctx.fillText(timeStr, Math.max(px, PADDING.left + 15), PADDING.top - 1)
-  }, [motionSignal, events, videoDuration])
+  }, [motionSignal, events, videoDuration, hrData, videoStartEpoch])
 
   // Animation loop for playhead
   useEffect(() => {
@@ -213,6 +259,7 @@ export default function Timeline({ motionSignal, events, videoDuration, onSeek, 
       <div style={styles.legend}>
         <span><span style={styles.dot('#ef4444')} />PLM</span>
         <span><span style={styles.dot('#f59e0b')} />Movement</span>
+        {hrData && hrData.length > 0 && <span><span style={styles.dot('rgba(236,72,153,0.8)')} />HR</span>}
       </div>
       <canvas
         ref={canvasRef}
