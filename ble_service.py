@@ -38,11 +38,37 @@ _stream_device: str | None = None
 _readings_count: int = 0
 
 
-def _parse_hr(data: bytearray) -> int:
+def _parse_hr(data: bytearray) -> tuple[int, list[float]]:
+    """Parse HR Measurement characteristic (0x2A37).
+
+    Returns (hr_bpm, rr_intervals_ms).
+    RR intervals are converted from 1/1024s units to milliseconds.
+    """
     flags = data[0]
-    if flags & 1:
-        return int.from_bytes(data[1:3], "little")
-    return data[1]
+    offset = 1
+
+    # HR value: UINT16 if bit 0 set, else UINT8
+    if flags & 0x01:
+        hr = int.from_bytes(data[offset : offset + 2], "little")
+        offset += 2
+    else:
+        hr = data[offset]
+        offset += 1
+
+    # Skip Energy Expended (2 bytes) if bit 3 set
+    if flags & 0x08:
+        offset += 2
+
+    # RR intervals if bit 4 set — each is UINT16 LE in 1/1024 sec units
+    rr_intervals: list[float] = []
+    if flags & 0x10:
+        while offset + 1 < len(data):
+            rr_raw = int.from_bytes(data[offset : offset + 2], "little")
+            rr_ms = round(rr_raw / 1.024, 1)  # convert to ms
+            rr_intervals.append(rr_ms)
+            offset += 2
+
+    return hr, rr_intervals
 
 
 def _write_status(status: str, device: str | None = None, hr: int | None = None):
@@ -112,7 +138,7 @@ async def test(request_body: dict | None = None):
 
             def callback(_, data):
                 nonlocal hr_value
-                hr_value = _parse_hr(data)
+                hr_value, _ = _parse_hr(data)
                 event.set()
 
             await client.start_notify(HR_CHAR, callback)
@@ -217,7 +243,7 @@ async def _stream_hr(address: str):
 
             def callback(_, data):
                 global _readings_count
-                hr = _parse_hr(data)
+                hr, rr_intervals = _parse_hr(data)
                 _readings_count += 1
                 now = datetime.now(timezone.utc)
 
@@ -227,12 +253,15 @@ async def _stream_hr(address: str):
                     "hr": hr,
                     "device": address,
                 }
+                if rr_intervals:
+                    entry["rr"] = rr_intervals
                 with open(_hr_file(), "a") as f:
                     f.write(json.dumps(entry) + "\n")
 
                 _write_status("streaming", device=address, hr=hr)
+                rr_label = f"  RR: {rr_intervals}" if rr_intervals else ""
                 print(
-                    f"\r  HR: {hr} bpm  ({_readings_count} readings)  ",
+                    f"\r  HR: {hr} bpm  ({_readings_count} readings){rr_label}  ",
                     end="",
                     flush=True,
                 )

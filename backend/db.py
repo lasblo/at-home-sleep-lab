@@ -102,6 +102,7 @@ CREATE TABLE IF NOT EXISTS hr_readings (
     epoch DOUBLE PRECISION NOT NULL,
     hr INTEGER NOT NULL,
     device TEXT,
+    rr_intervals JSONB,
     UNIQUE(epoch)
 );
 
@@ -134,6 +135,11 @@ async def init_db():
     _pool = await asyncpg.create_pool(dsn, min_size=2, max_size=10)
     async with _pool.acquire() as conn:
         await conn.execute(SCHEMA)
+        # Migrate: add rr_intervals column if missing (for existing DBs)
+        await conn.execute("""
+            ALTER TABLE hr_readings
+            ADD COLUMN IF NOT EXISTS rr_intervals JSONB
+        """)
 
 
 async def get_pool() -> asyncpg.Pool:
@@ -391,7 +397,8 @@ async def ingest_hr_readings(hr_dir: Path) -> int:
                     continue
                 try:
                     r = json.loads(line)
-                    readings.append((r["ts"], r["epoch"], r["hr"], r.get("device")))
+                    rr = json.dumps(r["rr"]) if "rr" in r else None
+                    readings.append((r["ts"], r["epoch"], r["hr"], r.get("device"), rr))
                 except (json.JSONDecodeError, KeyError):
                     continue
 
@@ -404,8 +411,8 @@ async def ingest_hr_readings(hr_dir: Path) -> int:
             batch = readings[batch_start : batch_start + 1000]
             await conn.executemany(
                 """
-                INSERT INTO hr_readings (ts, epoch, hr, device)
-                VALUES ($1, $2, $3, $4)
+                INSERT INTO hr_readings (ts, epoch, hr, device, rr_intervals)
+                VALUES ($1, $2, $3, $4, $5)
                 ON CONFLICT (epoch) DO NOTHING
             """,
                 batch,
@@ -418,21 +425,27 @@ async def get_hr_range(start_epoch: float, end_epoch: float) -> list[dict]:
     pool = await get_pool()
     rows = await pool.fetch(
         """
-        SELECT epoch, hr FROM hr_readings
+        SELECT epoch, hr, rr_intervals FROM hr_readings
         WHERE epoch >= $1 AND epoch <= $2
         ORDER BY epoch
     """,
         start_epoch,
         end_epoch,
     )
-    return [{"epoch": r["epoch"], "hr": r["hr"]} for r in rows]
+    result = []
+    for r in rows:
+        entry = {"epoch": r["epoch"], "hr": r["hr"]}
+        if r["rr_intervals"] is not None:
+            entry["rr"] = json.loads(r["rr_intervals"])
+        result.append(entry)
+    return result
 
 
 async def get_hr_latest(since_epoch: float = 0, limit: int = 500) -> list[dict]:
     pool = await get_pool()
     rows = await pool.fetch(
         """
-        SELECT epoch, hr FROM hr_readings
+        SELECT epoch, hr, rr_intervals FROM hr_readings
         WHERE epoch >= $1
         ORDER BY epoch DESC
         LIMIT $2
@@ -440,7 +453,13 @@ async def get_hr_latest(since_epoch: float = 0, limit: int = 500) -> list[dict]:
         since_epoch,
         limit,
     )
-    return [{"epoch": r["epoch"], "hr": r["hr"]} for r in rows]
+    result = []
+    for r in rows:
+        entry = {"epoch": r["epoch"], "hr": r["hr"]}
+        if r["rr_intervals"] is not None:
+            entry["rr"] = json.loads(r["rr_intervals"])
+        result.append(entry)
+    return result
 
 
 # ── Settings ────────────────────────────────────────────────────────
