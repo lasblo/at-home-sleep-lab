@@ -136,12 +136,34 @@ export interface Session {
   notes: string | null
 }
 
+export interface EventStats {
+  plm_count: number
+  mean_duration_sec: number
+  min_duration_sec: number
+  max_duration_sec: number
+  mean_amplitude: number
+  mean_interval_sec: number | null
+  median_interval_sec: number | null
+  series_count: number
+  mean_series_length: number | null
+  plms_in_series: number
+  isolated_plms: number
+  arousal_count: number
+  arousal_pct: number
+  plmai: number
+  mean_arousal_magnitude_bpm: number | null
+  mean_arousal_duration_sec: number | null
+}
+
 export interface SessionDetail extends Session {
   videos: VideoInfo[]
   events: SleepEvent[]
   summary: NightSummary
   hourly_distribution?: HourlyBucket[]
   arousal_summary?: ArousalSummary
+  event_stats?: EventStats | null
+  hr_stats?: HRStats | null
+  sleep_quality?: SleepQuality | null
 }
 
 export interface HRStats {
@@ -155,7 +177,6 @@ export interface HRStats {
 }
 
 export interface SleepQuality {
-  sleep_onset_min: number
   waso_min: number
   efficiency_pct: number | null
   wake_bouts: number

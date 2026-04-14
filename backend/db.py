@@ -209,6 +209,90 @@ def _compute_summary(events: list[dict], recording_hours: float) -> dict:
     }
 
 
+def _compute_event_stats(events: list[dict], recording_hours: float) -> dict | None:
+    """Compute detailed PLM/event analytics from the event list."""
+    plm_events = [e for e in events if e.get("is_plm")]
+    if not plm_events:
+        return None
+
+    durations = [e["duration_sec"] for e in plm_events]
+    amplitudes = [e["amplitude"] for e in plm_events]
+
+    # Inter-movement intervals (onset-to-onset for consecutive PLMs)
+    sorted_plms = sorted(
+        plm_events, key=lambda e: e.get("onset_sec", e["timestamp_sec"])
+    )
+    intervals = []
+    for i in range(1, len(sorted_plms)):
+        onset_a = sorted_plms[i - 1].get(
+            "onset_sec", sorted_plms[i - 1]["timestamp_sec"]
+        )
+        onset_b = sorted_plms[i].get("onset_sec", sorted_plms[i]["timestamp_sec"])
+        iv = onset_b - onset_a
+        if 4.5 <= iv <= 90:  # Only within AASM-valid range
+            intervals.append(iv)
+
+    # Series stats
+    series_ids = set(e.get("series_id") for e in plm_events if e.get("series_id"))
+    series_lengths = []
+    for sid in series_ids:
+        series_lengths.append(sum(1 for e in plm_events if e.get("series_id") == sid))
+
+    # Arousal stats from event-level data
+    arousal_count = 0
+    arousal_magnitudes = []
+    arousal_durations = []
+    for e in plm_events:
+        ar = e.get("arousal")
+        if ar and ar.get("has_arousal"):
+            arousal_count += 1
+            if ar.get("magnitude_bpm"):
+                arousal_magnitudes.append(ar["magnitude_bpm"])
+            if ar.get("duration_sec"):
+                arousal_durations.append(ar["duration_sec"])
+
+    plm_count = len(plm_events)
+    result = {
+        "plm_count": plm_count,
+        "mean_duration_sec": round(sum(durations) / len(durations), 2),
+        "min_duration_sec": round(min(durations), 2),
+        "max_duration_sec": round(max(durations), 2),
+        "mean_amplitude": round(sum(amplitudes) / len(amplitudes), 3),
+        "mean_interval_sec": (
+            round(sum(intervals) / len(intervals), 1) if intervals else None
+        ),
+        "median_interval_sec": (
+            round(float(np.median(intervals)), 1) if intervals else None
+        ),
+        "series_count": len(series_ids),
+        "mean_series_length": (
+            round(sum(series_lengths) / len(series_lengths), 1)
+            if series_lengths
+            else None
+        ),
+        "plms_in_series": sum(series_lengths),
+        "isolated_plms": plm_count - sum(series_lengths),
+        "arousal_count": arousal_count,
+        "arousal_pct": (
+            round(arousal_count / plm_count * 100, 1) if plm_count > 0 else 0
+        ),
+        "plmai": (
+            round(arousal_count / recording_hours, 1) if recording_hours > 0 else 0
+        ),
+        "mean_arousal_magnitude_bpm": (
+            round(sum(arousal_magnitudes) / len(arousal_magnitudes), 1)
+            if arousal_magnitudes
+            else None
+        ),
+        "mean_arousal_duration_sec": (
+            round(sum(arousal_durations) / len(arousal_durations), 1)
+            if arousal_durations
+            else None
+        ),
+    }
+    return result
+
+
 # ── Videos ──────────────────────────────────────────────────────────
 
 
@@ -617,6 +701,29 @@ async def get_session_detail(session_id: str) -> dict | None:
     session["events"] = events
     session["summary"] = _compute_summary(events, hours)
     session["hourly_distribution"] = hourly_distribution
+    session["event_stats"] = _compute_event_stats(events, hours)
+
+    # HR stats (reuse dashboard logic for single session)
+    if session.get("hr_enabled") and session.get("started_at") and hours > 0:
+        fake_session = {
+            "session_id": session_id,
+            "hr_enabled": True,
+            "started_at": session["started_at"],
+            "total_hours": hours,
+        }
+        hr_stats = await _compute_session_hr_stats(pool, [fake_session])
+        session["hr_stats"] = hr_stats.get(session_id)
+    else:
+        session["hr_stats"] = None
+
+    # Sleep quality from motion events
+    if hours > 0 and events:
+        fake_session = {"session_id": session_id, "total_hours": hours}
+        sq = await _compute_sleep_quality(pool, [fake_session])
+        session["sleep_quality"] = sq.get(session_id)
+    else:
+        session["sleep_quality"] = None
+
     return session
 
 

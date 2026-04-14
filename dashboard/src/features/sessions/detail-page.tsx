@@ -2,6 +2,7 @@ import { useParams, useNavigate } from "react-router-dom"
 import { useSessionDetail } from "./hooks/use-sessions"
 import { PageHeader } from "@/shared/components/page-header"
 import { PlmiBadge } from "@/shared/components/plmi-badge"
+import { StatCard } from "@/shared/components/stat-card"
 import { NotFound, ErrorState } from "@/shared/components/error-state"
 import { HourlyChart } from "@/shared/components/hourly-chart"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -52,6 +53,9 @@ export default function SessionDetailPage() {
   if (!session) return null
 
   const isRecording = session.status === "recording"
+  const es = session.event_stats
+  const hr = session.hr_stats
+  const sq = session.sleep_quality
 
   return (
     <div className="flex flex-col gap-6 p-6">
@@ -95,29 +99,170 @@ export default function SessionDetailPage() {
             BLE HR
           </Badge>
         )}
-        {session.summary && (
-          <>
-            <Badge variant="secondary">
-              <span className="font-semibold text-chart-1">
-                {session.summary.plm_count}
-              </span>
-              &nbsp;PLMs
-            </Badge>
-            <Badge variant="secondary">
-              <span className="font-semibold">
-                {session.summary.series_count}
-              </span>
-              &nbsp;Series
-            </Badge>
-            <Badge variant="secondary">
-              <span className="font-semibold">
-                {session.summary.body_movements}
-              </span>
-              &nbsp;Body
-            </Badge>
-          </>
-        )}
       </div>
+
+      {/* PLM Analytics */}
+      {session.summary && (
+        <>
+          <h3 className="text-sm font-medium text-muted-foreground">
+            PLM Analytics
+          </h3>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+            <StatCard
+              label="PLMI"
+              value={session.summary.plmi.toFixed(1)}
+              tooltip="Periodic Limb Movement Index — PLMs per hour of recording"
+            />
+            <StatCard
+              label="Total PLMs"
+              value={String(session.summary.plm_count)}
+              description={`${session.summary.total_movements} total events`}
+            />
+            <StatCard
+              label="PLM Series"
+              value={String(session.summary.series_count)}
+              tooltip="Groups of 4+ PLMs with 5–90s intervals (AASM criteria)"
+              description={
+                es
+                  ? `${es.plms_in_series} in series, ${es.isolated_plms} isolated`
+                  : undefined
+              }
+            />
+            <StatCard
+              label="Body Movements"
+              value={String(session.summary.body_movements)}
+              tooltip="High-amplitude, long-duration movements classified as whole-body"
+            />
+            <StatCard
+              label="Mean Duration"
+              value={es ? `${es.mean_duration_sec}s` : "—"}
+              tooltip="Average PLM duration in seconds"
+              description={
+                es
+                  ? `${es.min_duration_sec}s – ${es.max_duration_sec}s`
+                  : undefined
+              }
+            />
+            <StatCard
+              label="Mean Interval"
+              value={
+                es?.mean_interval_sec ? `${es.mean_interval_sec}s` : "—"
+              }
+              tooltip="Average onset-to-onset interval between consecutive PLMs (within AASM 5–90s range)"
+              description={
+                es?.median_interval_sec
+                  ? `median ${es.median_interval_sec}s`
+                  : undefined
+              }
+            />
+          </div>
+        </>
+      )}
+
+      {/* Sleep Quality */}
+      {sq && (
+        <>
+          <h3 className="text-sm font-medium text-muted-foreground">
+            Sleep Quality (estimated from motion)
+          </h3>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+            <StatCard
+              label="Sleep Efficiency"
+              value={sq.efficiency_pct != null ? `${sq.efficiency_pct}%` : "—"}
+              tooltip="Estimated time asleep / total recording time. Normal: >85%"
+            />
+            <StatCard
+              label="WASO"
+              value={`${sq.waso_min} min`}
+              tooltip="Wake After Sleep Onset — estimated minutes awake after falling asleep, based on motion clusters"
+            />
+            <StatCard
+              label="Wake Bouts"
+              value={String(sq.wake_bouts)}
+              tooltip="Number of distinct wake episodes (>5 min apart) after sleep onset"
+            />
+          </div>
+        </>
+      )}
+
+      {/* Heart Rate */}
+      {hr && (
+        <>
+          <h3 className="text-sm font-medium text-muted-foreground">
+            Heart Rate
+          </h3>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+            <StatCard
+              label="Average HR"
+              value={`${hr.avg_hr} bpm`}
+              tooltip="Mean heart rate across the entire recording"
+            />
+            <StatCard
+              label="Min HR"
+              value={`${hr.min_hr} bpm`}
+            />
+            <StatCard
+              label="Max HR"
+              value={`${hr.max_hr} bpm`}
+            />
+            <StatCard
+              label="Sleeping HR"
+              value={hr.sleeping_hr != null ? `${hr.sleeping_hr} bpm` : "—"}
+              tooltip="Lowest 5-minute rolling median — robust estimate of deepest sleep heart rate"
+            />
+            <StatCard
+              label="Waking HR"
+              value={hr.waking_hr != null ? `${hr.waking_hr} bpm` : "—"}
+              tooltip="Median HR during first 30 minutes (pre-sleep settling)"
+            />
+            <StatCard
+              label="Nocturnal Dip"
+              value={hr.dip_pct != null ? `${hr.dip_pct}%` : "—"}
+              tooltip="HR drop from waking to sleeping. Normal dipping: 10–20%"
+            />
+          </div>
+        </>
+      )}
+
+      {/* Cardiac Arousal */}
+      {es && es.arousal_count > 0 && (
+        <>
+          <h3 className="text-sm font-medium text-muted-foreground">
+            Cardiac Arousal
+          </h3>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+            <StatCard
+              label="PLMAI"
+              value={es.plmai.toFixed(1)}
+              tooltip="PLM Arousal Index — PLMs with cardiac arousal per hour"
+            />
+            <StatCard
+              label="Arousal Rate"
+              value={`${es.arousal_pct}%`}
+              tooltip="Percentage of PLMs that triggered a cardiac arousal response"
+              description={`${es.arousal_count} of ${es.plm_count} PLMs`}
+            />
+            <StatCard
+              label="Mean HR Spike"
+              value={
+                es.mean_arousal_magnitude_bpm != null
+                  ? `${es.mean_arousal_magnitude_bpm} bpm`
+                  : "—"
+              }
+              tooltip="Average heart rate increase during PLM-triggered arousals"
+            />
+            <StatCard
+              label="Mean Arousal Duration"
+              value={
+                es.mean_arousal_duration_sec != null
+                  ? `${es.mean_arousal_duration_sec}s`
+                  : "—"
+              }
+              tooltip="Average duration of cardiac arousal episodes"
+            />
+          </div>
+        </>
+      )}
 
       {/* Main content */}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
@@ -197,37 +342,6 @@ export default function SessionDetailPage() {
           </CardContent>
         </Card>
       </div>
-
-      {/* Arousal summary */}
-      {session.arousal_summary && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-sm">Cardiac Arousal Summary</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="flex flex-wrap gap-6 text-sm tabular-nums">
-              <div>
-                <span className="text-muted-foreground">PLMAI: </span>
-                <span className="font-medium">
-                  {session.arousal_summary.plmai}
-                </span>
-              </div>
-              <div>
-                <span className="text-muted-foreground">Arousal Rate: </span>
-                <span className="font-medium">
-                  {session.arousal_summary.arousal_percentage}%
-                </span>
-              </div>
-              <div>
-                <span className="text-muted-foreground">Avg HR Spike: </span>
-                <span className="font-medium">
-                  {session.arousal_summary.mean_magnitude_bpm.toFixed(1)} bpm
-                </span>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      )}
     </div>
   )
 }
